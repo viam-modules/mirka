@@ -1,0 +1,6 @@
+viam-mirka
+module.tar.gz
+bin/
+*.test
+.idea/
+.vscode/
