@@ -168,12 +168,11 @@ func (s *sander) start(rpm uint16) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if err := s.client.WriteRegister(regOperation, opWPDisable); err != nil {
-		return fmt.Errorf("disable write protection: %w", err)
-	}
-	if err := s.client.WriteRegister(regOperation, opOn); err != nil {
-		return fmt.Errorf("write ON: %w", err)
-	}
+	// In firmware 3.05+, ON/OFF is driven by the DI1 hardware signal on
+	// X1:4, not by writing 0x0004/0x0008 to the Operation register. Those
+	// values are explicitly "Not included on firmware 3.05 or later" in the
+	// manual — writing them returns Modbus exception 0x04. The drive must
+	// already be in the ON state (DI1 high) before we get here.
 	if err := s.client.WriteRegister(regSpeedSetpoint, rpm); err != nil {
 		return fmt.Errorf("write speed setpoint: %w", err)
 	}
@@ -191,14 +190,8 @@ func (s *sander) stop() error {
 }
 
 func (s *sander) stopLocked() error {
-	if err := s.client.WriteRegister(regOperation, opWPDisable); err != nil {
-		return fmt.Errorf("disable write protection: %w", err)
-	}
 	if err := s.client.WriteRegister(regOperation, opStop); err != nil {
 		return fmt.Errorf("write STOP: %w", err)
-	}
-	if err := s.client.WriteRegister(regOperation, opOff); err != nil {
-		return fmt.Errorf("write OFF: %w", err)
 	}
 	s.running = false
 	return nil
@@ -210,9 +203,6 @@ func (s *sander) setSpeed(rpm uint16) error {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if err := s.client.WriteRegister(regOperation, opWPDisable); err != nil {
-		return fmt.Errorf("disable write protection: %w", err)
-	}
 	return s.client.WriteRegister(regSpeedSetpoint, rpm)
 }
 
@@ -372,7 +362,7 @@ func (s *sander) Close(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Best-effort STOP+OFF so a crash or reconfigure never leaves the spindle spinning.
+	// Best-effort STOP so a crash or reconfigure never leaves the spindle spinning.
 	if s.running {
 		if err := s.stopLocked(); err != nil {
 			s.logger.Warnf("stop on close failed: %v", err)
