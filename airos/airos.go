@@ -32,10 +32,12 @@ const (
 )
 
 const (
-	opRun  uint16 = 0x0001
-	opStop uint16 = 0x0002
-	opOn   uint16 = 0x0004
-	opOff  uint16 = 0x0008
+	opRun       uint16 = 0x0001
+	opStop      uint16 = 0x0002
+	opOn        uint16 = 0x0004
+	opOff       uint16 = 0x0008
+	opWPDisable uint16 = 0x0040
+	opWPEnable  uint16 = 0x0080
 )
 
 const (
@@ -166,6 +168,9 @@ func (s *sander) start(rpm uint16) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	if err := s.client.WriteRegister(regOperation, opWPDisable); err != nil {
+		return fmt.Errorf("disable write protection: %w", err)
+	}
 	if err := s.client.WriteRegister(regOperation, opOn); err != nil {
 		return fmt.Errorf("write ON: %w", err)
 	}
@@ -186,6 +191,9 @@ func (s *sander) stop() error {
 }
 
 func (s *sander) stopLocked() error {
+	if err := s.client.WriteRegister(regOperation, opWPDisable); err != nil {
+		return fmt.Errorf("disable write protection: %w", err)
+	}
 	if err := s.client.WriteRegister(regOperation, opStop); err != nil {
 		return fmt.Errorf("write STOP: %w", err)
 	}
@@ -202,6 +210,9 @@ func (s *sander) setSpeed(rpm uint16) error {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.client.WriteRegister(regOperation, opWPDisable); err != nil {
+		return fmt.Errorf("disable write protection: %w", err)
+	}
 	return s.client.WriteRegister(regSpeedSetpoint, rpm)
 }
 
