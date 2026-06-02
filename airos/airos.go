@@ -266,8 +266,8 @@ var alarmBits = []struct {
 	{0x0800, "write_protection_disabled"},
 }
 
-func decodeAlarmFlags(v uint16) []string {
-	flags := []string{}
+func decodeAlarmFlags(v uint16) []interface{} {
+	flags := []interface{}{}
 	for _, a := range alarmBits {
 		if v&a.bit != 0 {
 			flags = append(flags, a.name)
