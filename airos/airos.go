@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -233,19 +234,37 @@ func (s *sander) Status(ctx context.Context) (map[string]interface{}, error) {
 	}, nil
 }
 
+var opStateBits = []struct {
+	bit  uint16
+	name string
+}{
+	{opRun, "RUN"},
+	{opStop, "STOP"},
+	{opOn, "ON"},
+	{opOff, "OFF"},
+	{0x0010, "TOOL_CHANGE_START"},
+	{0x0020, "TOOL_CHANGE_END"},
+	{0x0040, "WRITE_PROTECTION_DISABLE"},
+	{0x0080, "WRITE_PROTECTION_ENABLE"},
+}
+
+// 40012 reads back the combined state of the drive (e.g. OFF+STOP for an
+// idle drive). The manual is explicit that writes must be a single state but
+// reads may be any combination.
 func operationStateName(v uint16) string {
-	switch v {
-	case opRun:
-		return "RUN"
-	case opStop:
-		return "STOP"
-	case opOn:
-		return "ON"
-	case opOff:
-		return "OFF"
-	default:
+	if v == 0 {
+		return "NONE"
+	}
+	parts := []string{}
+	for _, b := range opStateBits {
+		if v&b.bit != 0 {
+			parts = append(parts, b.name)
+		}
+	}
+	if len(parts) == 0 {
 		return fmt.Sprintf("UNKNOWN(0x%04X)", v)
 	}
+	return strings.Join(parts, "+")
 }
 
 var alarmBits = []struct {
