@@ -1,6 +1,6 @@
 {
   "module_id": "viam:mirka",
-  "visibility": "public",
+  "visibility": "public_unlisted",
   "url": "https://github.com/viam-modules/mirka",
   "description": "Viam module for Mirka robotic sanding hardware",
   "models": [
@@ -16,7 +16,9 @@
     "setup": "",
     "path": "module.tar.gz",
     "arch": [
-      "linux/arm64"
+      "linux/arm64",
+      "linux/amd64",
+      "darwin/arm64"
     ]
   }
 }
