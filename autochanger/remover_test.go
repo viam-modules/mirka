@@ -16,12 +16,14 @@ import (
 // onWrite lets a test flip pdIn when a move command lands, simulating the
 // drive reaching its target.
 type stubMaster struct {
-	mu      sync.Mutex
-	pdIn    uint16
-	pdOut   []uint16
-	isdu    map[string][]byte
-	writes  []string // "isdu:<key>" and "pd:<word>" and "manifold:<mask>/<value>" in order
-	onWrite func(word uint16)
+	mu     sync.Mutex
+	pdIn   uint16
+	pdOut  []uint16
+	isdu   map[string][]byte
+	writes []string // "isdu:<key>" and "pd:<word>" and "manifold:<mask>/<value>" in order
+
+	onWrite    func(word uint16)
+	onManifold func(mask, value uint16)
 }
 
 func newStubMaster() *stubMaster {
@@ -50,8 +52,12 @@ func (s *stubMaster) WritePortOut(port int, word uint16) error {
 
 func (s *stubMaster) SetManifoldBits(port int, mask, value uint16) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.writes = append(s.writes, fmt.Sprintf("manifold:%#04x/%#04x", mask, value))
+	cb := s.onManifold
+	s.mu.Unlock()
+	if cb != nil {
+		cb(mask, value)
+	}
 	return nil
 }
 
@@ -200,5 +206,58 @@ func TestStatusDecodesPD(t *testing.T) {
 	}
 	if got["position_mm"] != 12.34 {
 		t.Fatalf("position_mm = %v, want 12.34", got["position_mm"])
+	}
+}
+
+// TestReleaseDiscAtomic proves release_disc's extend/blow/retract sequence
+// runs under one r.mu acquisition: a concurrent set_position started at the
+// deepest point inside the sequence (the moment the nozzle valve opens)
+// must block until release_disc fully completes, never landing its Move In
+// mid-sequence.
+func TestReleaseDiscAtomic(t *testing.T) {
+	s := newStubMaster()
+	s.reachOnMove()
+	r := testRemover(t, s)
+	r.homed = true
+
+	var once sync.Once
+	concurrentDone := make(chan struct{})
+	s.onManifold = func(mask, value uint16) {
+		once.Do(func() {
+			go func() {
+				if err := r.setPosition(context.Background(), 2, 0); err != nil {
+					t.Error(err)
+				}
+				close(concurrentDone)
+			}()
+		})
+	}
+
+	if _, err := r.DoCommand(context.Background(), map[string]interface{}{"command": "release_disc"}); err != nil {
+		t.Fatal(err)
+	}
+	<-concurrentDone
+
+	s.mu.Lock()
+	writes := append([]string(nil), s.writes...)
+	s.mu.Unlock()
+
+	release := []string{
+		"isdu:" + isduKey(1, 0x0106, 0), "pd:0x0002",
+		"manifold:0x0001/0x0001", "manifold:0x0001/0x0000",
+		"isdu:" + isduKey(1, 0x0106, 0), "pd:0x0002",
+	}
+	if len(writes) != len(release)+1 {
+		t.Fatalf("writes = %v, want release sequence + one trailing Move In", writes)
+	}
+	for i, want := range release {
+		if writes[i] != want {
+			t.Fatalf("write[%d] = %s, want %s (all: %v)", i, writes[i], want, writes)
+		}
+	}
+	// The concurrent Move In must land only after the full release
+	// sequence, never interleaved inside it.
+	if writes[len(release)] != "pd:0x0001" {
+		t.Fatalf("writes = %v, want trailing pd:0x0001 (concurrent Move In) after release", writes)
 	}
 }

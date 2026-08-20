@@ -39,7 +39,7 @@ const (
 	isduSysCommand uint16 = 0x0002 // IO-Link SystemCommand
 )
 
-const sysCmdStopMotion byte = 0xCA
+const sysCmdStopMotion byte = 0xCA // Festo app note 100290 tab. 6 (device-specific SystemCommand: stop motion)
 
 // al1342 is the master surface the remover needs; *Master implements it.
 // The seam exists for testability (stub in unit tests) and so this file
@@ -215,7 +215,14 @@ func float32BE(v float64) []byte {
 func (r *remover) setPosition(ctx context.Context, pos int, mmOverride float64) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	return r.setPositionLocked(ctx, pos, mmOverride)
+}
 
+// setPositionLocked is setPosition's body; caller must hold r.mu. Split out
+// so release_disc can run its whole extend/blow/retract sequence under one
+// lock acquisition instead of three, closing the window where a concurrent
+// DoCommand could move the knife mid-sequence.
+func (r *remover) setPositionLocked(ctx context.Context, pos int, mmOverride float64) error {
 	switch pos {
 	case 2:
 		if !r.homed {
@@ -251,6 +258,22 @@ func (r *remover) setPosition(ctx context.Context, pos int, mmOverride float64) 
 	return nil
 }
 
+// releaseDisc runs manual step 8 (extend fully to shed the disc, blast air
+// behind the knife, then return to the working gap) under a single r.mu
+// acquisition, so a concurrent DoCommand (e.g. set_position) can't move the
+// knife partway through the sequence.
+func (r *remover) releaseDisc(ctx context.Context) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if err := r.setPositionLocked(ctx, 3, 0); err != nil {
+		return err
+	}
+	if err := r.blowLocked(ctx, r.blowSeconds); err != nil {
+		return err
+	}
+	return r.setPositionLocked(ctx, 1, 0)
+}
+
 func (r *remover) home(ctx context.Context) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -267,6 +290,13 @@ func (r *remover) home(ctx context.Context) error {
 }
 
 func (r *remover) blow(ctx context.Context, seconds float64) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.blowLocked(ctx, seconds)
+}
+
+// blowLocked is blow's body; caller must hold r.mu (see setPositionLocked).
+func (r *remover) blowLocked(ctx context.Context, seconds float64) error {
 	mask := uint16(1) << r.nozzleValve
 	if err := r.master.SetManifoldBits(r.manifoldPort, mask, mask); err != nil {
 		return fmt.Errorf("open nozzle valve: %w", err)
@@ -338,20 +368,16 @@ func (r *remover) DoCommand(ctx context.Context, cmd map[string]interface{}) (ma
 		return map[string]interface{}{"blown": true}, nil
 
 	case "release_disc":
-		// Manual step 8: extend fully to shed the disc, blast air behind
-		// the knife, then return to the working gap.
-		if err := r.setPosition(ctx, 3, 0); err != nil {
-			return nil, err
-		}
-		if err := r.blow(ctx, r.blowSeconds); err != nil {
-			return nil, err
-		}
-		if err := r.setPosition(ctx, 1, 0); err != nil {
+		if err := r.releaseDisc(ctx); err != nil {
 			return nil, err
 		}
 		return map[string]interface{}{"released": true}, nil
 
 	case "quit_error":
+		// Writes go straight to the master, outside r.mu: a stuck move holds
+		// the lock for the full moveTimeout while it waits, and quit_error
+		// must be able to reach the drive during that wait to clear the
+		// fault, not queue up behind it.
 		if err := r.master.WritePortOut(r.removerPort, smsQuitError); err != nil {
 			return nil, err
 		}
