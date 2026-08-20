@@ -4,7 +4,7 @@ go 1.26.0
 
 require (
 	github.com/simonvetter/modbus v1.6.4
-	go.viam.com/rdk v1.1.0
+	go.viam.com/rdk v1.3.0
 	go.viam.com/utils v0.10.1
 )
 
