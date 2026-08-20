@@ -73,6 +73,12 @@ func (c *RemoverConfig) Validate(path string) ([]string, []string, error) {
 	if c.RemoverPort < 0 || c.RemoverPort > 8 {
 		return nil, nil, fmt.Errorf("%s: remover_port must be 1-8", path)
 	}
+	if c.ManifoldPort < 0 || c.ManifoldPort > 8 {
+		return nil, nil, fmt.Errorf("%s: manifold_port must be 1-8", path)
+	}
+	if c.NozzleValve < 0 || c.NozzleValve > 15 {
+		return nil, nil, fmt.Errorf("%s: nozzle_valve must be 0-15", path)
+	}
 	if c.SpeedPct != 0 && (c.SpeedPct < 10 || c.SpeedPct > 100) {
 		return nil, nil, fmt.Errorf("%s: speed_pct must be 10-100", path)
 	}
@@ -234,6 +240,8 @@ func (r *remover) setPositionLocked(ctx context.Context, pos int, mmOverride flo
 			return err
 		}
 		if err := r.waitForState(ctx, smsStateIn); err != nil {
+			r.clearMotionBits()
+			r.position = 0 // knife is somewhere between positions
 			return err
 		}
 	case 1, 3:
@@ -251,6 +259,8 @@ func (r *remover) setPositionLocked(ctx context.Context, pos int, mmOverride flo
 			return err
 		}
 		if err := r.waitForState(ctx, smsStateOut); err != nil {
+			r.clearMotionBits()
+			r.position = 0 // knife is somewhere between positions
 			return err
 		}
 	default:
@@ -258,6 +268,15 @@ func (r *remover) setPositionLocked(ctx context.Context, pos int, mmOverride flo
 	}
 	r.position = pos
 	return nil
+}
+
+// clearMotionBits best-effort zeroes PD-out after a failed move. SMS motion
+// bits are level-triggered: leaving Move latched keeps a jammed knife
+// pressing at configured force.
+func (r *remover) clearMotionBits() {
+	if err := r.master.WritePortOut(r.removerPort, 0); err != nil {
+		r.logger.Warnf("clearing motion bits after failed move: %v", err)
+	}
 }
 
 // releaseDisc runs manual step 8 (extend fully to shed the disc, blast air
@@ -285,11 +304,16 @@ func (r *remover) releaseDisc(ctx context.Context) error {
 func (r *remover) home(ctx context.Context) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	// A reference run invalidates the previous datum: a failed homing must
+	// not leave a stale homed=true behind.
+	r.homed = false
+	r.position = 0
 	if err := r.master.ISDUWrite(r.removerPort, isduExecHome, 0, []byte{0x01}); err != nil {
 		return fmt.Errorf("execute reference run: %w", err)
 	}
 	// Homing ends with the slide at the reference end position (State In).
 	if err := r.waitForState(ctx, smsStateIn); err != nil {
+		r.clearMotionBits()
 		return err
 	}
 	r.homed = true

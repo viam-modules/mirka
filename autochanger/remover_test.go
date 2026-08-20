@@ -147,6 +147,86 @@ func TestMoveTimesOutWhenNeverReached(t *testing.T) {
 	if err := r.setPosition(context.Background(), 3, 0); err == nil {
 		t.Fatal("expected timeout error")
 	}
+	if len(s.writes) == 0 || s.writes[len(s.writes)-1] != "pd:0x0000" {
+		t.Fatalf("writes = %v, want last write pd:0x0000 (motion-bit clear on timeout)", s.writes)
+	}
+	if r.position != 0 {
+		t.Fatalf("position = %d, want 0 (unknown after failed move)", r.position)
+	}
+}
+
+// TestQuitErrorResetsState covers the quit_error path: it must clear the
+// stale homed/position state left behind by whatever fault triggered it.
+func TestQuitErrorResetsState(t *testing.T) {
+	s := newStubMaster()
+	r := testRemover(t, s)
+	r.homed = true
+	r.position = 2
+
+	got, err := r.DoCommand(context.Background(), map[string]interface{}{"command": "quit_error"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got["cleared"] != true {
+		t.Fatalf("response = %v, want cleared:true", got)
+	}
+	if r.homed || r.position != 0 {
+		t.Fatalf("homed=%v position=%d, want false/0", r.homed, r.position)
+	}
+	want := []string{"pd:0x0004", "pd:0x0000"}
+	if len(s.writes) != len(want) || s.writes[0] != want[0] || s.writes[1] != want[1] {
+		t.Fatalf("writes = %v, want %v", s.writes, want)
+	}
+}
+
+// TestHomeSuccess covers a successful reference run overwriting a stale
+// homed flag left over from before the run started.
+func TestHomeSuccess(t *testing.T) {
+	s := newStubMaster()
+	s.reachOnMove()
+	// Homing has no PD-out Move write for the stub's onWrite hook to react
+	// to (it runs over ISDU), so simulate the drive already parked at the
+	// reference end position when waitForState polls.
+	s.pdIn = smsStateIn
+	r := testRemover(t, s)
+	r.homed = true // stale, from a previous run
+
+	got, err := r.DoCommand(context.Background(), map[string]interface{}{"command": "home"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got["homed"] != true {
+		t.Fatalf("response = %v, want homed:true", got)
+	}
+	wantWrite := "isdu:" + isduKey(1, isduExecHome, 0)
+	found := false
+	for _, w := range s.writes {
+		if w == wantWrite {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("writes = %v, want %s", s.writes, wantWrite)
+	}
+	if !r.homed || r.position != 2 {
+		t.Fatalf("homed=%v position=%d, want true/2", r.homed, r.position)
+	}
+}
+
+// TestHomeFailureClearsHomed proves a failed reference run doesn't leave a
+// stale homed=true: the previous datum is invalid whether or not the retry
+// succeeds.
+func TestHomeFailureClearsHomed(t *testing.T) {
+	s := newStubMaster() // PD-in never changes: waitForState times out
+	r := testRemover(t, s)
+	r.homed = true
+
+	if err := r.home(context.Background()); err == nil {
+		t.Fatal("expected timeout error")
+	}
+	if r.homed {
+		t.Fatal("r.homed = true, want false after failed home")
+	}
 }
 
 func TestDeviceErrorSurfaced(t *testing.T) {

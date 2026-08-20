@@ -23,7 +23,7 @@ Viam module for Mirka robotic sanding hardware. Go only — no Python anywhere i
 - Speed setpoint is clamped to 4000–10000 RPM in code because the drive silently misbehaves outside that band.
 - `Close()` best-effort STOPs the spindle so a crash/reconfigure never leaves it spinning. Preserve that invariant in any new motion-capable component.
 - AL1342 registers are addressed `port*1000 + {1,2,101}`: `+1` diagnostic/status, `+2` PD-in, `+101` PD-out. The acyclic ISDU channel is a fixed request/response pair independent of port — request at 500.., response at 0.. — serialized through one mutex on `Master` since the device has a single command channel.
-- ISDU multi-byte values (end position, current position) are assumed **big-endian**; this depends on AL1342 register 8999 (Byte Swap) being at its factory default. Verify at bring-up (see checklist below) before trusting `position_mm`.
+- ISDU multi-byte values (end position, current position) are assumed **big-endian**; this depends on AL1342 register 8999 (Byte Swap) being at its factory default. Verify at bring-up (see the bring-up checklist in `docs/superpowers/plans/2026-08-20-autochanger-remover.md`) before trusting `position_mm`.
 - `autochanger/geometry.go` constants are bring-up-verified envelope estimates scaled from the manual's drawings (no vendor CAD exists), rounded up on uncertain dimensions. Treat them as provisional until corrected against the physical unit.
 
 ## Conventions

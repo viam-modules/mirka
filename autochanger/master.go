@@ -147,6 +147,9 @@ func (m *Master) isduExec(port int, index uint16, sub uint8, cmd uint8, data []b
 					port, index, sub, byte(resp[6]>>8), byte(resp[6]))
 			}
 			n := int(resp[5])
+			if n > 32 { // response data area is regs 6..21 = 32 bytes; the device controls resp[5]
+				n = 32
+			}
 			out := make([]byte, n)
 			for i := 0; i < n; i++ {
 				w := resp[6+i/2]
