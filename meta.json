@@ -8,6 +8,11 @@
       "api": "rdk:component:generic",
       "model": "viam:mirka:airos-550cv",
       "short_description": "Mirka AIROS 550CV orbital sander via Modbus RTU motor drive cabinet"
+    },
+    {
+      "api": "rdk:component:generic",
+      "model": "viam:mirka:autochanger-remover",
+      "short_description": "Mirka AutoChanger Remover: Festo knife slide + air nozzle via IFM AL1342 IO-Link master (Modbus TCP)"
     }
   ],
   "entrypoint": "./viam-mirka",
