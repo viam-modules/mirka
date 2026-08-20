@@ -83,3 +83,55 @@ func TestSharedMasterIsShared(t *testing.T) {
 	}
 	rel2()
 }
+
+func TestISDUOddLengthData(t *testing.T) {
+	_, m := newTestMaster(t)
+	want := []byte{0xAA, 0xBB, 0xCC} // 3-byte payload exercises odd-length packing/unpacking
+	if err := m.ISDUWrite(1, 0x0200, 0, want); err != nil {
+		t.Fatal(err)
+	}
+	got, err := m.ISDURead(1, 0x0200, 0, 3)
+	if err != nil || !bytes.Equal(got, want) {
+		t.Fatalf("ISDURead odd-length = %x, want %x, err %v", got, want, err)
+	}
+}
+
+func TestISDUUserIDWrap(t *testing.T) {
+	_, m := newTestMaster(t)
+	m.mu.Lock()
+	m.userID = 255 // on next increment, will become 0, then skip to 1
+	m.mu.Unlock()
+
+	// First write: userID becomes 0, skipped to 1
+	if err := m.ISDUWrite(1, 0x0300, 0, []byte{0x01}); err != nil {
+		t.Fatal(err)
+	}
+	// Second write: userID becomes 2
+	if err := m.ISDUWrite(1, 0x0301, 0, []byte{0x02}); err != nil {
+		t.Fatal(err)
+	}
+	// Both should succeed without error
+}
+
+func TestISDUTimeout(t *testing.T) {
+	f, m := newTestMaster(t)
+	m.isduTimeout = 50 * time.Millisecond // shorter timeout for fast test
+	f.dropISDU = true                     // fake won't respond
+
+	_, err := m.ISDURead(1, 0x0400, 0, 0)
+	if err == nil {
+		t.Fatal("expected timeout error, got nil")
+	}
+	if errStr := err.Error(); !contains(errStr, "timeout") {
+		t.Fatalf("expected timeout in error, got: %v", err)
+	}
+}
+
+func contains(s, substr string) bool {
+	for i := 0; i < len(s)-len(substr)+1; i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}

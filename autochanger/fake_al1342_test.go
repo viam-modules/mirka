@@ -18,6 +18,8 @@ type fakeAL1342 struct {
 	isdu map[string][]byte
 	// isduWrites records ISDUWrite calls in order, for sequence assertions.
 	isduWrites []string
+	// dropISDU, if true, causes execISDU to skip writing response registers.
+	dropISDU bool
 }
 
 func isduKey(port, index uint16, sub uint16) string {
@@ -69,6 +71,9 @@ func (f *fakeAL1342) HandleHoldingRegisters(req *modbus.HoldingRegistersRequest)
 // execISDU services the request channel synchronously: real hardware takes
 // milliseconds, the fake is instant — the client's poll loop still works.
 func (f *fakeAL1342) execISDU() {
+	if f.dropISDU {
+		return // test: simulate no response from hardware
+	}
 	port, index, sub := f.regs[500], f.regs[501], f.regs[502]
 	cmdUser := f.regs[503]
 	key := isduKey(port, index, sub)

@@ -21,11 +21,12 @@ const (
 )
 
 type Master struct {
-	mu     sync.Mutex
-	client *modbus.ModbusClient
-	userID uint8
-	refs   int
-	addr   string
+	mu          sync.Mutex
+	client      *modbus.ModbusClient
+	userID      uint8
+	refs        int
+	addr        string
+	isduTimeout time.Duration
 }
 
 var (
@@ -53,7 +54,7 @@ func SharedMaster(addr string, timeout time.Duration) (*Master, func(), error) {
 	if err := client.Open(); err != nil {
 		return nil, nil, fmt.Errorf("connecting to AL1342 at %s: %w", addr, err)
 	}
-	m := &Master{client: client, refs: 1, addr: addr}
+	m := &Master{client: client, refs: 1, addr: addr, isduTimeout: 2 * time.Second}
 	masters[addr] = m
 	return m, m.releaseFunc(), nil
 }
@@ -131,7 +132,7 @@ func (m *Master) isduExec(port int, index uint16, sub uint8, cmd uint8, data []b
 		return nil, fmt.Errorf("write ISDU request: %w", err)
 	}
 
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(m.isduTimeout)
 	for {
 		resp, err := m.client.ReadRegisters(regISDUResp, 22, modbus.HOLDING_REGISTER)
 		if err != nil {
