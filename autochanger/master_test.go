@@ -2,6 +2,7 @@ package autochanger
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 	"time"
 )
@@ -106,11 +107,21 @@ func TestISDUUserIDWrap(t *testing.T) {
 	if err := m.ISDUWrite(1, 0x0300, 0, []byte{0x01}); err != nil {
 		t.Fatal(err)
 	}
+	m.mu.Lock()
+	if m.userID != 1 {
+		t.Fatalf("userID after first wrap = %d, want 1 (must skip 0)", m.userID)
+	}
+	m.mu.Unlock()
+
 	// Second write: userID becomes 2
 	if err := m.ISDUWrite(1, 0x0301, 0, []byte{0x02}); err != nil {
 		t.Fatal(err)
 	}
-	// Both should succeed without error
+	m.mu.Lock()
+	if m.userID != 2 {
+		t.Fatalf("userID after second write = %d, want 2", m.userID)
+	}
+	m.mu.Unlock()
 }
 
 func TestISDUTimeout(t *testing.T) {
@@ -122,16 +133,7 @@ func TestISDUTimeout(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected timeout error, got nil")
 	}
-	if errStr := err.Error(); !contains(errStr, "timeout") {
+	if !strings.Contains(err.Error(), "timeout") {
 		t.Fatalf("expected timeout in error, got: %v", err)
 	}
-}
-
-func contains(s, substr string) bool {
-	for i := 0; i < len(s)-len(substr)+1; i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
 }
