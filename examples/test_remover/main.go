@@ -10,15 +10,14 @@ package main
 //   go run ./examples/test_remover bench-test
 //
 // Environment variables:
-//   VIAM_ADDRESS             (required)
-//   VIAM_API_KEY_ID          (required)
-//   VIAM_API_KEY             (required)
+//   VIAM_ADDRESS             (required, machine remote address)
 //   MIRKA_REMOVER_COMPONENT  (optional, default: mirka-remover)
+//
+// Auth comes from the Viam CLI's cached session — run `viam login` first.
 
 import (
 	"bufio"
 	"context"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -26,11 +25,11 @@ import (
 	"strconv"
 	"strings"
 
+	"go.viam.com/rdk/cli"
 	"go.viam.com/rdk/components/generic"
 	"go.viam.com/rdk/logging"
 	"go.viam.com/rdk/resource"
-	"go.viam.com/rdk/robot/client"
-	"go.viam.com/utils/rpc"
+	"go.viam.com/rdk/robot"
 )
 
 func getenv(name string) string {
@@ -41,31 +40,9 @@ func getenv(name string) string {
 	return value
 }
 
-func connect(ctx context.Context) (*client.RobotClient, error) {
-	// Create API key credentials with proper JSON payload format
-	keyData := map[string]string{
-		"key_id": getenv("VIAM_API_KEY_ID"),
-		"key":    getenv("VIAM_API_KEY"),
-	}
-	payload, err := json.Marshal(keyData)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal credentials: %w", err)
-	}
-
-	credentials := rpc.Credentials{
-		Type:    rpc.CredentialsTypeAPIKey,
-		Payload: string(payload),
-	}
-
+func connect(ctx context.Context) (robot.Robot, error) {
 	logger := logging.NewLogger("test-remover")
-	dialOpts := []client.DialOption{
-		client.WithDialDebug(),
-		client.WithCredentials(credentials),
-	}
-	opts := []client.RobotClientOption{
-		client.WithDialOptions(dialOpts...),
-	}
-	return client.New(ctx, getenv("VIAM_ADDRESS"), logger, opts...)
+	return cli.ConnectToMachine(ctx, getenv("VIAM_ADDRESS"), logger)
 }
 
 func boolLetter(v interface{}) string {
