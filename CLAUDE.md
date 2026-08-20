@@ -5,8 +5,10 @@ Viam module for Mirka robotic sanding hardware. Go only — no Python anywhere i
 ## Layout
 
 - `airos/airos.go` — the single model `viam:mirka:airos-550cv`: a `generic` component driving the Mirka AIROS 550CV orbital sander through its motor drive cabinet over **Modbus RTU** (serial, `github.com/simonvetter/modbus`).
+- `autochanger/` — the model `viam:mirka:autochanger-remover`: a `generic` component driving the Mirka AutoChanger remover (Festo knife slide + air nozzle) through an IFM AL1342 IO-Link master over **Modbus TCP**. `master.go` holds the shared `Master` client (`SharedMaster`, one per address, since the manifold PD-out word is shared across components); `remover.go` is the component; `geometry.go` provides its `Geometries()` envelope.
 - `cmd/module/cmd.go` — module entrypoint (`module.ModularMain`).
 - `examples/test_sander/main.go` — CLI tester that connects to a live machine via the Viam Go SDK and exercises DoCommand (`status`, `start`, `stop`, `set-speed`, `monitor`, `bench-test`). Stdlib `flag` only.
+- `examples/test_remover/main.go` — same pattern for the autochanger remover (`status`, `home`, `set-position`, `blow`, `release-disc`, `quit-error`, `bench-test`).
 - `meta.json` — module id `viam:mirka`, entrypoint `./viam-mirka`, built for linux/{arm64,amd64} + darwin/arm64.
 
 ## Build / test
@@ -20,6 +22,18 @@ Viam module for Mirka robotic sanding hardware. Go only — no Python anywhere i
 - Firmware 3.05+ dropped ON/OFF (0x0004/0x0008) and WP writes from the Operation register — ON/OFF is the DI1 hardware line. Don't reintroduce them; the drive answers Modbus exception 0x04.
 - Speed setpoint is clamped to 4000–10000 RPM in code because the drive silently misbehaves outside that band.
 - `Close()` best-effort STOPs the spindle so a crash/reconfigure never leaves it spinning. Preserve that invariant in any new motion-capable component.
+- AL1342 registers are addressed `port*1000 + {1,2,101}`: `+1` diagnostic/status, `+2` PD-in, `+101` PD-out. The acyclic ISDU channel is a fixed request/response pair independent of port — request at 500.., response at 0.. — serialized through one mutex on `Master` since the device has a single command channel.
+- ISDU multi-byte values (end position, current position) are assumed **big-endian**; this depends on AL1342 register 8999 (Byte Swap) being at its factory default. Verify at bring-up (checklist below) before trusting `position_mm`.
+- `autochanger/geometry.go` constants are bring-up-verified envelope estimates scaled from the manual's drawings (no vendor CAD exists), rounded up on uncertain dimensions. Treat them as provisional until corrected against the physical unit.
+
+### Remover bring-up checklist (run at the cell with `examples/test_remover`)
+
+1. AL1342 reachable at its IP from the viam host; port X01 mode = IO-Link.
+2. Byte order: `status` must show a sane `position_mm`; garbage means AL1342 register 8999 (Byte Swap) is not at the assumed default.
+3. Remove the sliding plate → `home` → reattach the plate (manual p.49).
+4. Exercise `set-position` 1/2/3 and `blow` while watching the physical knife.
+5. Measure the unit and correct the envelope constants in `autochanger/geometry.go`.
+6. Configure the AL1342 fail-safe output pattern (valves closed) via its web UI.
 
 ## Conventions
 
