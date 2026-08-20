@@ -109,6 +109,8 @@ type remover struct {
 	mu       sync.Mutex
 	homed    bool
 	position int // last commanded knife position, 0 = unknown
+
+	betweenStepsHook func() // test-only: called between release_disc steps; nil in production
 }
 
 func newRemover(
@@ -268,8 +270,14 @@ func (r *remover) releaseDisc(ctx context.Context) error {
 	if err := r.setPositionLocked(ctx, 3, 0); err != nil {
 		return err
 	}
+	if r.betweenStepsHook != nil {
+		r.betweenStepsHook()
+	}
 	if err := r.blowLocked(ctx, r.blowSeconds); err != nil {
 		return err
+	}
+	if r.betweenStepsHook != nil {
+		r.betweenStepsHook()
 	}
 	return r.setPositionLocked(ctx, 1, 0)
 }
