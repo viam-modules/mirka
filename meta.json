@@ -1,8 +1,10 @@
 {
+  "$schema": "https://dl.viam.dev/module.schema.json",
   "module_id": "viam:mirka",
   "visibility": "public_unlisted",
   "url": "https://github.com/viam-modules/mirka",
   "description": "Viam module for Mirka robotic sanding hardware",
+  "markdown_link": "README.md",
   "models": [
     {
       "api": "rdk:component:generic",
@@ -10,10 +12,11 @@
       "short_description": "Mirka AIROS 550CV orbital sander via Modbus RTU motor drive cabinet"
     }
   ],
-  "entrypoint": "./viam-mirka",
+  "entrypoint": "bin/viam-mirka",
+  "first_run": "",
   "build": {
-    "build": "make module",
-    "setup": "",
+    "build": "make module.tar.gz",
+    "setup": "make setup",
     "path": "module.tar.gz",
     "arch": [
       "linux/arm64",
