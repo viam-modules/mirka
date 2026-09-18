@@ -1,6 +1,10 @@
 viam-mirka
-module.tar.gz
-bin/
+bin
+*tar.gz
 *.test
 .idea/
 .vscode/
+
+# Viam reload files
+.VIAM_RELOAD_ARCHIVE.tar.gz
+reload-*/
