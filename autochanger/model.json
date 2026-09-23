@@ -1,0 +1,83 @@
+{
+  "name": "autochanger-remover",
+  "kinematic_param_type": "SVA",
+  "links": [
+    {
+      "id": "body",
+      "parent": "world",
+      "translation": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "geometry": {
+        "type": "box",
+        "x": 195,
+        "y": 250,
+        "z": 450,
+        "translation": {
+          "x": -97.5,
+          "y": 0,
+          "z": -225.0
+        },
+        "label": "remover_body"
+      }
+    },
+    {
+      "id": "blade",
+      "parent": "knife_joint",
+      "translation": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "geometry": {
+        "type": "box",
+        "x": 2,
+        "y": 180,
+        "z": 260,
+        "translation": {
+          "x": 1,
+          "y": 0,
+          "z": -130.0
+        },
+        "label": "knife"
+      }
+    },
+    {
+      "id": "head",
+      "parent": "blade",
+      "translation": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "geometry": {
+        "type": "box",
+        "x": 20,
+        "y": 180,
+        "z": 120,
+        "translation": {
+          "x": 12,
+          "y": 0,
+          "z": -60.0
+        },
+        "label": "knife_head"
+      }
+    }
+  ],
+  "joints": [
+    {
+      "id": "knife_joint",
+      "type": "prismatic",
+      "parent": "body",
+      "axis": {
+        "x": 1,
+        "y": 0,
+        "z": 0
+      },
+      "min": 0,
+      "max": 25
+    }
+  ]
+}
