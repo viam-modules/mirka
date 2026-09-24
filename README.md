@@ -542,6 +542,7 @@ Owned by the caller, not checked beyond what preflight can see:
 - The arm is retreated from contact and not moving.
 - A pass snapshot exists: the obstacle vision(s) have geometry to hand back, or preflight refuses.
 - The remover's frame is calibrated (touched off against the plate) — every waypoint is relative to it.
+- `tool_frame` follows the pad contract the waypoints are built on: its origin is the centre of the pad face, its +Z is the outward pad normal, and its one geometry (a box or capsule, the pad) sits behind the face along −Z. Preflight checks this in the tool frame and refuses when the geometry is rotated more than 1°, off-centre in X or Y by more than 1 mm, or its +Z face is more than 1 mm off `z = 0` — a tool frame 30 mm above the face would otherwise press 40 mm at wp2.
 - `input_range_override` matches the sanding config's copy. Drift between them is silent: both planners succeed, and one wraps the cable.
 
 ### Status

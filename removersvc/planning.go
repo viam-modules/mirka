@@ -75,8 +75,17 @@ func prepareFrameSystem(
 	return fs, nil
 }
 
-// padRadius reads the pad from the tool frame's one geometry. A frame's
-// configured geometry lands on its _origin frame.
+// Tolerances on the tool-frame contract padRadius checks.
+const (
+	padContractMM  = 1.0
+	padContractDeg = 1.0
+)
+
+// padRadius reads the pad from the tool frame's one geometry and checks the
+// contract the waypoints are built on: the tool frame's origin is the pad
+// face's centre and its +Z the outward pad normal, with the pad behind the
+// face. A tool frame 30 mm above the face would otherwise press 40 mm at wp2.
+// A frame's configured geometry lands on its _origin frame.
 func padRadius(fs *referenceframe.FrameSystem, inputs referenceframe.FrameSystemInputs, toolFrame string) (float64, error) {
 	all, err := referenceframe.FrameSystemGeometries(fs, inputs)
 	if err != nil {
@@ -91,20 +100,41 @@ func padRadius(fs *referenceframe.FrameSystem, inputs referenceframe.FrameSystem
 	if len(geoms) != 1 {
 		return 0, fmt.Errorf("tool frame %q must carry exactly one geometry, the pad; found %d", toolFrame, len(geoms))
 	}
-	pb := geoms[0].ToProtobuf()
-	var r float64
+	// FrameSystemGeometries answers in world; the contract is in the tool frame.
+	tf, err := fs.Transform(inputs.ToLinearInputs(), referenceframe.NewZeroPoseInFrame(toolFrame), referenceframe.World)
+	if err != nil {
+		return 0, err
+	}
+	pad := geoms[0].Transform(spatialmath.PoseInverse(tf.(*referenceframe.PoseInFrame).Pose()))
+	pb := pad.ToProtobuf()
+	var r, halfZ float64
 	switch {
 	case pb.GetBox() != nil:
 		d := pb.GetBox().GetDimsMm()
 		r = math.Min(d.GetX(), d.GetY()) / 2
+		halfZ = d.GetZ() / 2
 	case pb.GetCapsule() != nil:
 		r = pb.GetCapsule().GetRadiusMm()
+		halfZ = pb.GetCapsule().GetLengthMm() / 2
 	default:
 		return 0, fmt.Errorf("tool frame %q geometry must be a box or capsule to read the pad radius", toolFrame)
 	}
 	if r < minPadRadiusMM || r > maxPadRadiusMM {
 		return 0, fmt.Errorf("tool frame %q pad radius %.1f mm is outside %v to %v mm; is the pad geometry configured?",
 			toolFrame, r, minPadRadiusMM, maxPadRadiusMM)
+	}
+	if deg := motionplan.OrientDist(pad.Pose().Orientation(), spatialmath.NewZeroOrientation()); deg > padContractDeg {
+		return 0, fmt.Errorf("tool frame %q pad geometry is rotated %.1f degrees in the tool frame; "+
+			"the tool frame's +Z must be the pad normal", toolFrame, deg)
+	}
+	c := pad.Pose().Point()
+	if math.Abs(c.X) > padContractMM || math.Abs(c.Y) > padContractMM {
+		return 0, fmt.Errorf("tool frame %q pad geometry is centred at x=%.1f y=%.1f mm in the tool frame; "+
+			"the tool frame's origin must be the pad face's centre", toolFrame, c.X, c.Y)
+	}
+	if face := c.Z + halfZ; math.Abs(face) > padContractMM {
+		return 0, fmt.Errorf("tool frame %q pad face is at z=%.1f mm in the tool frame; "+
+			"the tool frame's origin must be on the pad face, with the pad behind it along -Z", toolFrame, face)
 	}
 	return r, nil
 }

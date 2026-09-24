@@ -1,6 +1,7 @@
 package removersvc
 
 import (
+	"math"
 	"testing"
 
 	"github.com/golang/geo/r3"
@@ -70,6 +71,45 @@ func TestPadRadius(t *testing.T) {
 	test.That(t, err, test.ShouldBeNil)
 	_, err = padRadius(fs3, referenceframe.NewZeroInputs(fs3), "tiny")
 	test.That(t, err, test.ShouldNotBeNil)
+}
+
+// The waypoints assume the tool frame's origin is the pad face's centre with
+// +Z out of the face; each way a pad geometry can break that is a refusal.
+func TestPadRadiusRefusesOffContractGeometry(t *testing.T) {
+	dims := r3.Vector{X: 2 * testPadRadiusMM, Y: 2 * testPadRadiusMM, Z: 20}
+	cases := []struct {
+		name string
+		pose spatialmath.Pose
+		want string
+	}{
+		{"face offset", spatialmath.NewPoseFromPoint(r3.Vector{Z: -40}), "pad face is at z=-30.0"},
+		{"off centre", spatialmath.NewPoseFromPoint(r3.Vector{X: 5, Z: -10}), "centred at x=5.0"},
+		{"rotated", spatialmath.NewPose(r3.Vector{Z: -10}, &spatialmath.R4AA{Theta: math.Pi / 18, RX: 1}), "rotated 10.0 degrees"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			pad, err := spatialmath.NewBox(tc.pose, dims, "")
+			test.That(t, err, test.ShouldBeNil)
+			parts := testParts(t)
+			parts[2].FrameConfig = referenceframe.NewLinkInFrame(referenceframe.World,
+				spatialmath.NewPoseFromPoint(r3.Vector{X: 1000}), "compliance", pad)
+			fs, err := referenceframe.NewFrameSystem("", parts, nil)
+			test.That(t, err, test.ShouldBeNil)
+			_, err = padRadius(fs, referenceframe.NewZeroInputs(fs), "compliance")
+			test.That(t, err, test.ShouldNotBeNil)
+			test.That(t, err.Error(), test.ShouldContainSubstring, `"compliance"`)
+			test.That(t, err.Error(), test.ShouldContainSubstring, tc.want)
+		})
+	}
+}
+
+// The contract is checked in the tool frame, not world: a pad on a frame that
+// is itself rotated and offset in world still passes.
+func TestPadRadiusChecksInToolFrame(t *testing.T) {
+	fs, inputs := reachableCell(t)
+	r, err := padRadius(fs, inputs, "compliance")
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, r, test.ShouldAlmostEqual, testPadRadiusMM)
 }
 
 func TestBuildRequest(t *testing.T) {
