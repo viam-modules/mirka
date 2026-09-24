@@ -623,7 +623,15 @@ Verdict: not unattended, for three independent reasons.
 ### Build requirements
 
 This module links `armplanning`, which pulls in `github.com/go-nlopt/nlopt`, a
-cgo binding to the system `nlopt` library used for in-process motion planning
-(the remover service's own copy of the cell's joint limits, applied before
-every plan). Building the module, and running it on a machine, requires
-`nlopt` installed — see `first_run.sh`.
+cgo binding to the `nlopt` library used for in-process motion planning (the
+remover service's own copy of the cell's joint limits, applied before every
+plan).
+
+- **Build:** `make setup` runs `setup.sh`, which installs the nlopt headers and
+  library — `libnlopt-dev` via apt on Linux, `nlopt-static` from the
+  `viamrobotics/brews` tap via Homebrew on macOS.
+- **Run:** the Linux binary links the nlopt shared library, so a Linux machine
+  needs `libnlopt0`. The module's `first_run.sh` does nothing if `libnlopt` is
+  already present, and otherwise installs `libnlopt0` via apt, failing with a
+  message naming the library if it cannot. The macOS binary links nlopt
+  statically and needs nothing at runtime.
