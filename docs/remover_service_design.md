@@ -1,6 +1,6 @@
 # Autochanger remover service: design
 
-Status: design approved in conversation 2026-09-24, not yet implemented.
+Status: implemented in `removersvc/` (plan: `docs/superpowers/plans/2026-09-24-remover-service.md`).
 Companion to the sanding module's maintenance design
 (`docs/pad_change_orchestration_design.md` in `viamrobotics/sanding`, branch
 `pad-change-design`), which owns the trigger, the button, and the return trip.

@@ -41,5 +41,6 @@ module: test module.tar.gz
 
 all: test module.tar.gz
 
-setup:
+setup: first_run.sh
+	./first_run.sh
 	go mod tidy
