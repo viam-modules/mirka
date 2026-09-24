@@ -42,6 +42,10 @@ func (c *Config) Validate(path string) ([]string, []string, error) {
 	if len(c.InputRangeOverride) == 0 {
 		return nil, nil, utils.NewConfigValidationFieldRequiredError(path, "input_range_override")
 	}
+	if _, ok := c.InputRangeOverride[c.Arm]; !ok {
+		return nil, nil, fmt.Errorf("%s: input_range_override has no entry for arm %q; the arm's limits are the ones that matter",
+			path, c.Arm)
+	}
 	if c.GripOffsetMM <= 0 || c.GripOffsetMM >= autochanger.KnifeTravelMM {
 		return nil, nil, fmt.Errorf("%s: grip_offset_mm must be between 0 and %v exclusive, got %v",
 			path, autochanger.KnifeTravelMM, c.GripOffsetMM)

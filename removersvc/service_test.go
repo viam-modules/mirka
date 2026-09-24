@@ -150,14 +150,19 @@ func TestFailureLatchesUntilReset(t *testing.T) {
 func TestFailureReportClasses(t *testing.T) {
 	cases := []struct {
 		failKnifeAt float64
-		failArmAt   int
-		step        string
-		report      string
+		// Which move to failKnifeAt fails, counting preflight's grip; 0 means the first.
+		failKnifeNth int
+		failArmAt    int
+		step         string
+		report       string
 	}{
 		{failArmAt: 1, step: "wp1", report: "arm_displaced"},
+		{failArmAt: 3, step: "wp3", report: "in_contact"},
 		{failArmAt: 4, step: "wp4", report: "in_contact"},
+		{failArmAt: 5, step: "wp5", report: "in_contact"},
 		{failKnifeAt: 0, step: "clamp", report: "in_contact"},
 		{failKnifeAt: 25, step: "release", report: "knife_holding"},
+		{failKnifeAt: 0.7, failKnifeNth: 1, step: "regrip", report: "knife_holding"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.step, func(t *testing.T) {
@@ -171,8 +176,13 @@ func TestFailureReportClasses(t *testing.T) {
 				return nil
 			}
 			if tc.failArmAt == 0 {
+				seen := 0
 				r.remover.MoveToPositionFunc = func(_ context.Context, pos, _ []float64, _ map[string]interface{}) error {
-					if pos[0] == tc.failKnifeAt {
+					if pos[0] != tc.failKnifeAt {
+						return nil
+					}
+					seen++
+					if seen > tc.failKnifeNth {
 						return errors.New("remover: move timed out")
 					}
 					return nil
@@ -196,7 +206,9 @@ func TestPlanFailureMovesNothingForThatStep(t *testing.T) {
 	_, err := doRemove(r)
 	test.That(t, err, test.ShouldNotBeNil)
 	test.That(t, r.log(), test.ShouldNotContain, "arm.move")
-	test.That(t, status(t, r)["report"], test.ShouldEqual, "arm_displaced")
+	st := status(t, r)
+	test.That(t, st["step"], test.ShouldEqual, "wp1")
+	test.That(t, st["report"], test.ShouldEqual, "arm_displaced")
 }
 
 func TestFailureReportSurvivesUnreachableDrive(t *testing.T) {
@@ -351,6 +363,8 @@ func TestArmMovingBeforeKnifeStepRefuses(t *testing.T) {
 	}
 	_, err := doRemove(r)
 	test.That(t, err, test.ShouldNotBeNil)
+	test.That(t, err.Error(), test.ShouldContainSubstring, "arm is moving")
+	test.That(t, status(t, r)["step"], test.ShouldEqual, "clamp")
 	test.That(t, r.log(), test.ShouldNotContain, "knife.0")
 }
 

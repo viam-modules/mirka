@@ -505,7 +505,7 @@ Every field is something the service cannot derive on its own:
 | `mirka`                 | string          | Required  | Which generic resource is the spindle to stop in preflight.                                |
 | `tool_frame`            | string          | Required  | Which frame carries the pad geometry; there is no convention to guess it from.             |
 | `obstacle_visions`      | list of string  | Required  | Where obstacle geometry comes from; at least one is required, and none is a default.       |
-| `input_range_override`  | object          | Required  | The cell's joint limits are load-bearing (cable wrap) and this cell decided on them; the motion service API has no per-request notion of them. |
+| `input_range_override`  | object          | Required  | The cell's joint limits are load-bearing (cable wrap) and this cell decided on them; the motion service API has no per-request notion of them. Must include an entry for `arm`. |
 | `grip_offset_mm`        | float64         | Required  | The one disc-dependent number the manual leaves to the integrator; a process parameter, not a hardware fact. Must be strictly between `0` and `25`. |
 
 ### DoCommand
@@ -633,5 +633,8 @@ plan).
 - **Run:** the Linux binary links the nlopt shared library, so a Linux machine
   needs `libnlopt0`. The module's `first_run.sh` does nothing if `libnlopt` is
   already present, and otherwise installs `libnlopt0` via apt, failing with a
-  message naming the library if it cannot. The macOS binary links nlopt
-  statically and needs nothing at runtime.
+  message naming the library if it cannot. On macOS `first_run.sh` installs
+  nothing: the build uses `nlopt-static` so the binary needs nothing at
+  runtime. If the build machine's `nlopt-static` keg also holds
+  `libnlopt.dylib`, the linker prefers it and the binary then needs that dylib
+  at its Homebrew path; `otool -L bin/viam-mirka | grep nlopt` shows which.

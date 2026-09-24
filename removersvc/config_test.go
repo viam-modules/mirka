@@ -39,6 +39,9 @@ func TestValidate(t *testing.T) {
 		{"no tool frame", func(c *Config) { c.ToolFrame = "" }, "tool_frame"},
 		{"no visions", func(c *Config) { c.ObstacleVisions = nil }, "obstacle_visions"},
 		{"no limits", func(c *Config) { c.InputRangeOverride = nil }, "input_range_override"},
+		{"no limits for the arm", func(c *Config) {
+			c.InputRangeOverride = map[string]map[string]referenceframe.Limit{"gantry": {"0": {Min: 0, Max: 1}}}
+		}, `input_range_override has no entry for arm "arm"`},
 		{"grip zero", func(c *Config) { c.GripOffsetMM = 0 }, "grip_offset_mm"},
 		{"grip negative", func(c *Config) { c.GripOffsetMM = -0.7 }, "grip_offset_mm"},
 		{"grip at release", func(c *Config) { c.GripOffsetMM = 25 }, "grip_offset_mm"},
