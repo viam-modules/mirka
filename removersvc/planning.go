@@ -22,12 +22,24 @@ var removerGeometryNames = []string{
 	"autochanger-remover:head",
 }
 
-// Contact-step tolerances. The linear constraint makes wp3 to wp4 a chord of
-// the tilt's arc; for a pad-centre distance of about 60 mm from the tip line
-// the two differ by under 1 mm.
+// Contact-step tolerances. Every contact step holds the pad within 1 mm of the
+// straight line between waypoints; wp3 to wp4 is a chord of the tilt's arc,
+// and for a pad-centre distance of about 60 mm from the tip line the two
+// differ by under 1 mm.
+//
+// Orientation is held to a fixed 2 degrees where the step does not rotate.
+// A rotating step (wp4's 20 degree tilt) cannot use a fixed tolerance: the
+// planner accepts a pose only within the tolerance of one end of the segment
+// it checks, and a slerped midpoint is half the segment's rotation from both.
+// There the tolerance is a fraction of the segment's own rotation instead,
+// which admits the midpoint at any segment length. armplanning v1.9.0 splits a
+// linear-constrained move into subgoals of about 2 degrees and checks each
+// against its own ends, which a fixed 2 degrees happens to pass; the scaled
+// tolerance does not depend on that split.
 const (
-	lineToleranceMM         = 1.0
-	orientationToleranceDeg = 2.0
+	lineToleranceMM           = 1.0
+	orientationToleranceDeg   = 2.0
+	rotatingOrientationFactor = 0.6
 )
 
 // Mirka pads are 77 to 150 mm across. Outside this range the tool frame's
@@ -118,24 +130,40 @@ func checkRemoverGeometries(fs *referenceframe.FrameSystem, inputs referencefram
 	return nil
 }
 
-// buildRequest builds one plan request for one arm-step goal, expressed as
-// the tool frame's target pose in the remover's origin frame. contact steps
-// add the linear-approach constraint and allow the pad to touch the remover's
-// own geometries, which a free-motion step must still avoid.
+// buildRequest builds one plan request for one arm-step goal, given as the
+// tool frame's target pose in the remover's origin frame. contact steps add
+// the linear-approach constraint and allow the pad to touch the remover's own
+// geometries, which a free-motion step must still avoid.
+//
+// The goal is handed to the planner in world: armplanning computes start poses
+// in world and refuses a linear-constrained goal in any other frame ("frame
+// mismatch world remover_origin").
 func buildRequest(
 	fs *referenceframe.FrameSystem,
 	inputs referenceframe.FrameSystemInputs,
 	obstacles *referenceframe.GeometriesInFrame,
 	cfg *Config,
-	goal spatialmath.Pose,
+	prev, goal spatialmath.Pose,
 	contact bool,
-) *armplanning.PlanRequest {
+) (*armplanning.PlanRequest, error) {
+	tf, err := fs.Transform(inputs.ToLinearInputs(),
+		referenceframe.NewPoseInFrame(originFrame(cfg.Remover), goal), referenceframe.World)
+	if err != nil {
+		return nil, fmt.Errorf("goal into world: %w", err)
+	}
 	constraints := motionplan.NewEmptyConstraints()
 	if contact {
-		constraints.AddLinearConstraint(motionplan.LinearConstraint{
-			LineToleranceMm:          lineToleranceMM,
-			OrientationToleranceDegs: orientationToleranceDeg,
-		})
+		if motionplan.OrientDist(prev.Orientation(), goal.Orientation()) > orientationToleranceDeg {
+			constraints.AddLinearConstraint(motionplan.LinearConstraint{LineToleranceMm: lineToleranceMM})
+			constraints.AddPseudolinearConstraint(motionplan.PseudolinearConstraint{
+				OrientationToleranceFactor: rotatingOrientationFactor,
+			})
+		} else {
+			constraints.AddLinearConstraint(motionplan.LinearConstraint{
+				LineToleranceMm:          lineToleranceMM,
+				OrientationToleranceDegs: orientationToleranceDeg,
+			})
+		}
 		allows := make([]motionplan.CollisionSpecificationAllowedFrameCollisions, 0, len(removerGeometryNames))
 		for _, name := range removerGeometryNames {
 			allows = append(allows, motionplan.CollisionSpecificationAllowedFrameCollisions{Frame1: cfg.ToolFrame, Frame2: name})
@@ -148,9 +176,9 @@ func buildRequest(
 		ObstaclesInWorldFrame: obstacles,
 		Constraints:           constraints,
 		Goals: []*armplanning.PlanState{armplanning.NewPlanState(referenceframe.FrameSystemPoses{
-			cfg.ToolFrame: referenceframe.NewPoseInFrame(originFrame(cfg.Remover), goal),
+			cfg.ToolFrame: tf.(*referenceframe.PoseInFrame),
 		}, nil)},
-	}
+	}, nil
 }
 
 // planArmFunc plans one arm step and returns the arm's joint path. The service

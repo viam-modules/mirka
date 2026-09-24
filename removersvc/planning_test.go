@@ -5,6 +5,7 @@ import (
 
 	"github.com/golang/geo/r3"
 	"go.viam.com/rdk/logging"
+	"go.viam.com/rdk/motionplan"
 	"go.viam.com/rdk/referenceframe"
 	"go.viam.com/rdk/spatialmath"
 	"go.viam.com/test"
@@ -78,17 +79,22 @@ func TestBuildRequest(t *testing.T) {
 	obstacles := referenceframe.NewGeometriesInFrame(referenceframe.World, nil)
 	goal := spatialmath.NewPoseFromPoint(r3.Vector{X: 5})
 
-	free := buildRequest(fs, inputs, obstacles, cfg, goal, false)
+	free, err := buildRequest(fs, inputs, obstacles, cfg, goal, goal, false)
+	test.That(t, err, test.ShouldBeNil)
 	test.That(t, free.Constraints.LinearConstraint, test.ShouldBeEmpty)
 	test.That(t, free.Constraints.CollisionSpecification, test.ShouldBeEmpty)
 	test.That(t, free.ObstaclesInWorldFrame, test.ShouldEqual, obstacles)
 	test.That(t, len(free.Goals), test.ShouldEqual, 1)
 	pif := free.Goals[0].Poses()["compliance"]
-	test.That(t, pif.Parent(), test.ShouldEqual, "remover_origin")
+	test.That(t, pif.Parent(), test.ShouldEqual, referenceframe.World)
 	test.That(t, spatialmath.PoseAlmostEqual(pif.Pose(), goal), test.ShouldBeTrue)
 
-	contact := buildRequest(fs, inputs, obstacles, cfg, goal, true)
-	test.That(t, len(contact.Constraints.LinearConstraint), test.ShouldEqual, 1)
+	contact, err := buildRequest(fs, inputs, obstacles, cfg, goal, goal, true)
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, contact.Constraints.LinearConstraint, test.ShouldResemble, []motionplan.LinearConstraint{
+		{LineToleranceMm: lineToleranceMM, OrientationToleranceDegs: orientationToleranceDeg},
+	})
+	test.That(t, contact.Constraints.PseudolinearConstraint, test.ShouldBeEmpty)
 	test.That(t, len(contact.Constraints.CollisionSpecification), test.ShouldEqual, 1)
 	var got []string
 	for _, a := range contact.Constraints.CollisionSpecification[0].Allows {
@@ -97,4 +103,34 @@ func TestBuildRequest(t *testing.T) {
 		got = append(got, a.Frame2)
 	}
 	test.That(t, got, test.ShouldResemble, removerGeometryNames)
+}
+
+// wp3 to wp4 rotates 20 degrees, so a fixed orientation tolerance would refuse
+// its slerped midpoint; the tolerance must scale with the step's rotation.
+func TestBuildRequestRotatingStep(t *testing.T) {
+	fs := testFrameSystem(t)
+	features, err := readFeatures(0.7)
+	test.That(t, err, test.ShouldBeNil)
+	wps := waypoints(features, testPadRadiusMM)
+	req, err := buildRequest(fs, referenceframe.NewZeroInputs(fs), referenceframe.NewGeometriesInFrame(referenceframe.World, nil),
+		validConfig(), wps[2], wps[3], true)
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, req.Constraints.LinearConstraint, test.ShouldResemble, []motionplan.LinearConstraint{{LineToleranceMm: lineToleranceMM}})
+	test.That(t, req.Constraints.PseudolinearConstraint, test.ShouldResemble, []motionplan.PseudolinearConstraint{
+		{OrientationToleranceFactor: rotatingOrientationFactor},
+	})
+	test.That(t, rotatingOrientationFactor, test.ShouldBeGreaterThanOrEqualTo, 0.5)
+}
+
+// The goal reaches the planner in world, where armplanning computes the start
+// pose; a remover away from world must still land the goal on the waypoint.
+func TestBuildRequestGoalInWorld(t *testing.T) {
+	fs, inputs := reachableCell(t)
+	goal := spatialmath.NewPoseFromPoint(r3.Vector{X: 5, Z: -300})
+	req, err := buildRequest(fs, inputs, referenceframe.NewGeometriesInFrame(referenceframe.World, nil),
+		validConfig(), goal, goal, true)
+	test.That(t, err, test.ShouldBeNil)
+	pif := req.Goals[0].Poses()["compliance"]
+	test.That(t, pif.Parent(), test.ShouldEqual, referenceframe.World)
+	test.That(t, spatialmath.R3VectorAlmostEqual(pif.Pose().Point(), r3.Vector{X: -645, Y: -133, Z: 500}, 1e-6), test.ShouldBeTrue)
 }

@@ -285,7 +285,11 @@ func (s *service) runStep(ctx context.Context, p *prepared, st step) error {
 		if err != nil {
 			return fmt.Errorf("reading current inputs: %w", err)
 		}
-		req := buildRequest(p.fs, inputs, p.obstacles, s.cfg, p.waypoints[st.waypoint], st.contact)
+		prev := p.waypoints[max(st.waypoint-1, 0)]
+		req, err := buildRequest(p.fs, inputs, p.obstacles, s.cfg, prev, p.waypoints[st.waypoint], st.contact)
+		if err != nil {
+			return err
+		}
 		path, err := s.planArm(ctx, req)
 		if err != nil {
 			return fmt.Errorf("planning: %w", err)
