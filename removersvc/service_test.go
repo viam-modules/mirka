@@ -308,6 +308,40 @@ func TestOneCycleAtATime(t *testing.T) {
 	}
 }
 
+// A reconfigure closes the old instance; it must not keep driving the arm
+// while the new one accepts a remove.
+func TestCloseStopsARunningRemove(t *testing.T) {
+	r := newRig(t)
+	entered := make(chan struct{})
+	r.arm.MoveThroughJointPositionsFunc = func(ctx context.Context, _ [][]referenceframe.Input, _ *arm.MoveOptions, _ map[string]interface{}) error {
+		r.record("arm.move")
+		close(entered)
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	done := make(chan error)
+	go func() { _, err := doRemove(r); done <- err }()
+	<-entered
+
+	closed := make(chan error)
+	go func() { closed <- r.svc.Close(context.Background()) }()
+	select {
+	case err := <-closed:
+		test.That(t, err, test.ShouldBeNil)
+	case <-time.After(5 * time.Second):
+		t.Fatal("Close did not return")
+	}
+	// The stops run inside the cycle, so seeing them now shows Close waited.
+	test.That(t, r.log(), test.ShouldContain, "arm.stop")
+	test.That(t, r.log(), test.ShouldContain, "knife.stop")
+	test.That(t, <-done, test.ShouldNotBeNil)
+
+	test.That(t, r.svc.Close(context.Background()), test.ShouldBeNil)
+	_, err := doRemove(r)
+	test.That(t, err, test.ShouldNotBeNil)
+	test.That(t, err.Error(), test.ShouldContainSubstring, "closed")
+}
+
 func TestArmMovingBeforeKnifeStepRefuses(t *testing.T) {
 	r := newRig(t)
 	calls := 0

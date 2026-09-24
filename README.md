@@ -556,7 +556,11 @@ left free space.
 
 A failure after preflight latches `remove` refused until `reset`; a
 `not_started` preflight refusal does not latch, because the arm never moved
-toward the changer. The failure table, from the design's section 5:
+toward the changer. The latch lives in memory, so any rebuild of the service
+— a module restart or a reconfigure — clears it; check the cell before calling
+`remove` after either. A rebuild also closes the old instance, which cancels a
+running `remove`, stops both actuators, and returns only once the cycle has ended.
+The failure table, from the design's section 5:
 
 | Step | Failure leaves | Disc | Reported as |
 |---|---|---|---|

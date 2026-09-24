@@ -22,6 +22,7 @@ import (
 	"github.com/viam-modules/mirka/autochanger"
 )
 
+// Model is the remover service's model triplet, viam:mirka:autochanger-remover-svc.
 var Model = resource.NewModel("viam", "mirka", "autochanger-remover-svc")
 
 func init() {
@@ -36,8 +37,9 @@ const (
 	atWaypointDeg = 2.0
 )
 
-// stopTimeout bounds the actuator stops sent after a cancelled remove, on a
-// context that is not the cancelled one.
+// stopTimeout bounds the hardware calls made after a remove has stopped: the
+// actuator stops after a cancel, and the reads a failure report takes. Both
+// run on a context detached from the remove's, which may already be done.
 const stopTimeout = 5 * time.Second
 
 type cycleState struct {
@@ -56,7 +58,6 @@ type cycleState struct {
 type service struct {
 	resource.Named
 	resource.AlwaysRebuild
-	resource.TriviallyCloseable
 
 	cfg     *Config
 	arm     arm.Arm
@@ -72,6 +73,11 @@ type service struct {
 	cycle sync.Mutex
 	mu    sync.Mutex // guards st
 	st    cycleState
+
+	// Cancelled by Close, which ends a running remove: a rebuilt service must
+	// not share the arm with an old instance still driving it.
+	closeCtx context.Context
+	cancel   context.CancelFunc
 }
 
 func newFromConfig(
@@ -113,11 +119,22 @@ func newService(
 	name resource.Name, cfg *Config, a arm.Arm, remover gantry.Gantry, mirka resource.Resource,
 	visions []vision.Service, fsSvc framesystem.Service, planArm planArmFunc, logger logging.Logger,
 ) *service {
+	closeCtx, cancel := context.WithCancel(context.Background())
 	return &service{
 		Named: name.AsNamed(), cfg: cfg, arm: a, remover: remover, mirka: mirka,
 		visions: visions, fsSvc: fsSvc, planArm: planArm, logger: logger,
-		st: cycleState{state: "idle", stepIndex: -1},
+		st:       cycleState{state: "idle", stepIndex: -1},
+		closeCtx: closeCtx, cancel: cancel,
 	}
+}
+
+// Close cancels a running remove, whose cancel path stops both actuators, and
+// returns once it has finished. Safe to call more than once.
+func (s *service) Close(context.Context) error {
+	s.cancel()
+	s.cycle.Lock()
+	defer s.cycle.Unlock()
+	return nil
 }
 
 func (s *service) DoCommand(ctx context.Context, cmd map[string]interface{}) (map[string]interface{}, error) {
@@ -155,6 +172,12 @@ func (s *service) remove(ctx context.Context) (map[string]interface{}, error) {
 		return nil, errors.New("remove is already running")
 	}
 	defer s.cycle.Unlock()
+	if s.closeCtx.Err() != nil {
+		return nil, errors.New("service is closed")
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	defer context.AfterFunc(s.closeCtx, cancel)()
 
 	s.mu.Lock()
 	if s.st.latched {
