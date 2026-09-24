@@ -6,9 +6,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golang/geo/r3"
 	"go.viam.com/rdk/components/arm"
 	"go.viam.com/rdk/motionplan/armplanning"
 	"go.viam.com/rdk/referenceframe"
+	"go.viam.com/rdk/spatialmath"
 	viz "go.viam.com/rdk/vision"
 	"go.viam.com/test"
 )
@@ -75,6 +77,15 @@ func TestPreflightRefusals(t *testing.T) {
 				return errors.New("remover: drive is not ready (pd=0x0000); acknowledge faults with quit_error")
 			}
 		}, "quit_error"},
+		{"pad geometry isn't a pad", func(r *rig) {
+			parts := testParts(t)
+			placeholder, err := spatialmath.NewBox(spatialmath.NewPoseFromPoint(r3.Vector{Z: -10}),
+				r3.Vector{X: 1, Y: 1, Z: 1}, "")
+			test.That(t, err, test.ShouldBeNil)
+			parts[2].FrameConfig = referenceframe.NewLinkInFrame(referenceframe.World,
+				spatialmath.NewPoseFromPoint(r3.Vector{X: 1000}), "compliance", placeholder)
+			r.svc.fsSvc = newFakeFSFromParts(t, parts)
+		}, "pad radius"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -239,6 +250,29 @@ func TestCancelStopsBothActuators(t *testing.T) {
 	st := status(t, r)
 	test.That(t, st["report"], test.ShouldEqual, "in_contact")
 	test.That(t, st["latched"], test.ShouldEqual, true)
+}
+
+func TestCancelDuringPreflightStopsBothActuators(t *testing.T) {
+	r := newRig(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	var stopCtxErr error
+	r.arm.StopFunc = func(c context.Context, _ map[string]interface{}) error {
+		stopCtxErr = c.Err()
+		r.record("arm.stop")
+		return nil
+	}
+	r.remover.MoveToPositionFunc = func(c context.Context, pos, _ []float64, _ map[string]interface{}) error {
+		cancel() // preflight's grip move, the only knife move reached before a cancel
+		return c.Err()
+	}
+	_, err := r.svc.DoCommand(ctx, map[string]interface{}{"command": "remove"})
+	test.That(t, err, test.ShouldNotBeNil)
+	test.That(t, r.log(), test.ShouldContain, "arm.stop")
+	test.That(t, r.log(), test.ShouldContain, "knife.stop")
+	test.That(t, stopCtxErr, test.ShouldBeNil)
+	st := status(t, r)
+	test.That(t, st["report"], test.ShouldEqual, "not_started")
+	test.That(t, st["latched"], test.ShouldEqual, false)
 }
 
 func TestOneCycleAtATime(t *testing.T) {

@@ -62,7 +62,14 @@ func testFrameSystem(t *testing.T) *referenceframe.FrameSystem {
 
 func newFakeFS(t *testing.T) *inject.FrameSystemService {
 	t.Helper()
-	parts := testParts(t)
+	return newFakeFSFromParts(t, testParts(t))
+}
+
+// newFakeFSFromParts is newFakeFS parameterized on the frame-system parts, so
+// a test can swap in a tool-frame geometry the service's preflight checks
+// refuse on.
+func newFakeFSFromParts(t *testing.T, parts []*referenceframe.FrameSystemPart) *inject.FrameSystemService {
+	t.Helper()
 	fs, err := referenceframe.NewFrameSystem("", parts, nil)
 	test.That(t, err, test.ShouldBeNil)
 	f := inject.NewFrameSystemService("fs")

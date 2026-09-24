@@ -168,7 +168,7 @@ func (s *service) remove(ctx context.Context) (map[string]interface{}, error) {
 
 	p, err := s.preflight(ctx)
 	if err != nil {
-		s.fail(ctx, -1, "preflight", reportNotStarted, err, p)
+		s.failCycle(ctx, -1, "preflight", reportNotStarted, err, p)
 		return nil, err
 	}
 	for i, st := range removalSteps {
@@ -176,11 +176,8 @@ func (s *service) remove(ctx context.Context) (map[string]interface{}, error) {
 		s.st.step, s.st.stepIndex = st.name, i
 		s.mu.Unlock()
 		if err := s.runStep(ctx, p, st); err != nil {
-			if ctx.Err() != nil {
-				s.stopActuators(ctx)
-			}
 			err = fmt.Errorf("remove step %s: %w", st.name, err)
-			s.fail(ctx, i, st.name, st.report, err, p)
+			s.failCycle(ctx, i, st.name, st.report, err, p)
 			return nil, err
 		}
 	}
@@ -323,6 +320,16 @@ func (s *service) stopActuators(ctx context.Context) {
 	}
 }
 
+// failCycle stops both actuators on a cancelled remove before fail reads the
+// hardware, so a step's own cancellation (including the knife move inside
+// preflight) always reaches Stop rather than only the step-loop's.
+func (s *service) failCycle(ctx context.Context, index int, name string, rep report, cause error, p *prepared) {
+	if ctx.Err() != nil {
+		s.stopActuators(ctx)
+	}
+	s.fail(ctx, index, name, rep, cause, p)
+}
+
 // fail records where the cycle stopped and what the hardware says. Reads that
 // fail leave their field unknown rather than masking the step's error.
 func (s *service) fail(ctx context.Context, index int, name string, rep report, cause error, p *prepared) {
@@ -340,7 +347,9 @@ func (s *service) fail(ctx context.Context, index int, name string, rep report, 
 			st.driveReady = &ready
 		}
 	}
-	if p != nil && p.fs != nil {
+	// wp5 only means something once the arm has moved toward the changer;
+	// a preflight refusal leaves p.waypoints unset.
+	if rep != reportNotStarted && p != nil && p.fs != nil {
 		if at, err := s.armAtWaypoint(readCtx, p, 4); err == nil {
 			st.armAtWp5 = &at
 		}
