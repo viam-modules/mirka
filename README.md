@@ -627,14 +627,5 @@ cgo binding to the `nlopt` library used for in-process motion planning (the
 remover service's own copy of the cell's joint limits, applied before every
 plan).
 
-- **Build:** `make setup` runs `setup.sh`, which installs the nlopt headers and
-  library — `libnlopt-dev` via apt on Linux, `nlopt-static` from the
-  `viamrobotics/brews` tap via Homebrew on macOS.
-- **Run:** the Linux binary links the nlopt shared library, so a Linux machine
-  needs `libnlopt0`. The module's `first_run.sh` does nothing if `libnlopt` is
-  already present, and otherwise installs `libnlopt0` via apt, failing with a
-  message naming the library if it cannot. On macOS `first_run.sh` installs
-  nothing: the build uses `nlopt-static` so the binary needs nothing at
-  runtime. If the build machine's `nlopt-static` keg also holds
-  `libnlopt.dylib`, the linker prefers it and the binary then needs that dylib
-  at its Homebrew path; `otool -L bin/viam-mirka | grep nlopt` shows which.
+`make setup` installs it: `libnlopt-dev` via apt on Linux, `nlopt-static` from
+the `viamrobotics/brews` tap via Homebrew on macOS.
