@@ -81,3 +81,29 @@ lab-sander-1:
 
 Changing one changes the cycle for every disc; a constant moves to config only
 if tuning shows it varies by disc.
+
+## Planning
+
+wp1 is a free move: the arm plans from wherever it is to wp1 around the cell,
+checked against every geometry in the frame system and the pass mesh from
+`obstacle_visions`. wp2 to wp5 are contact steps:
+
+- **Straight line**: the tool frame stays within 1 mm of the straight line
+  between consecutive waypoints, with orientation held within 2°. wp4 rotates,
+  so its orientation tolerance is 0.6 of the step's own rotation instead; a
+  fixed 2° would refuse the midpoint of a 20° turn.
+- **Contact allowed**: the planner models the 10 mm press as the pad sinking
+  into a solid body, where the real plate springs back. So in contact steps the
+  tool frame, and each frame in `contact_frames`, may touch the remover's
+  `body`, `blade` and `head` geometries. Nothing else may, and free moves still
+  avoid the remover entirely.
+- **Joint limits**: the arm model's limits, tightened by
+  `input_range_override` when set; use the sanding config's values.
+
+The contact exemption names individual geometries, never the remover component,
+which would expand to every geometry it owns. The planner labels each one
+`<model name>:<link id>`, and the model name depends on how the frame system
+was built: in process the model keeps its own name (`autochanger-remover:body`),
+but a module receives the frame system as a proto, and RDK renames a model
+rebuilt from one after its frame, the component (`remover:body`). So preflight
+reads the three labels from the remover frame's own geometries by link id.
