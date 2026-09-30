@@ -123,3 +123,13 @@ within 0.01 rad (about 2 mm at the pad) of where that path starts. The free move
 to wp1 runs at the arm's configured speed; the contact steps run at
 `contact_speed_degs_per_sec` and `contact_acceleration_degs_per_sec_per_sec`
 (10 °/s and 20 °/s² by default), whatever the arm is set to.
+
+## Step mode
+
+`step` runs the cycle one step per call and pauses between them: the first
+call is preflight, which plans the whole cycle, and each later call runs one
+step of the stored plan. A paused cycle resumes, with `step` or `remove`, only
+if every arm joint is still within 0.01 rad of where the last arm step left
+it; otherwise the call moves nothing and the cycle stays paused. People jog
+the arm to measure while paused, and the remaining steps are paths planned from
+that spot.

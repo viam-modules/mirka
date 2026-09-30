@@ -515,8 +515,9 @@ Every field is something the service cannot derive on its own:
 
 | Call | Behaviour |
 |---|---|
-| `{"command": "remove"}` | Preflight, which plans every arm step before anything moves and refuses (`not_started`) if any cannot be planned, then run the stored paths. Blocks. One at a time — a second call while running is refused. Refused while the last result is a latched failure. Context cancel aborts the cycle and stops both actuators; no recovery is attempted. |
-| `{"command": "reset"}` | Clears a latched failure back to idle. Moves nothing and reads nothing — it only records that a human has recovered the cell. Refused while `remove` is running. |
+| `{"command": "remove"}` | Preflight, which plans every arm step before anything moves and refuses (`not_started`) if any cannot be planned, then run the stored paths. Blocks. One at a time — a second call while running is refused. Refused while the last result is a latched failure. Context cancel aborts the cycle and stops both actuators; no recovery is attempted. On a paused cycle, runs the remaining steps without repeating preflight. |
+| `{"command": "step"}` | Runs one step, then pauses: the first `step` is preflight, the next is wp1 (the pad in front of the blade), then wp2 onward in the manual's order. Resuming a paused cycle, with `step` or `remove`, is refused unless every arm joint is still within 0.01 rad of where the last arm step left it; the refusal moves nothing and the cycle stays paused. A failure latches exactly as in `remove`. |
+| `{"command": "reset"}` | Clears a latched failure, or abandons a paused cycle, back to idle. Moves nothing and reads nothing — it only records that a human has recovered the cell. Refused while `remove` is running. |
 
 ```json
 { "command": "remove" }
@@ -527,6 +528,23 @@ Response:
 ```json
 { "removed": true }
 ```
+
+```json
+{ "command": "step" }
+```
+
+Response, while steps remain, then after the last one:
+
+```json
+{ "completed": "wp1", "next": "wp2" }
+```
+
+```json
+{ "completed": "regrip", "removed": true }
+```
+
+A paused cycle lives in memory like the latch: a module restart or a
+reconfigure drops it, so check the cell by eye before the next call.
 
 ```json
 { "command": "reset" }
@@ -550,8 +568,8 @@ Owned by the caller, not checked beyond what preflight can see:
 
 ### Status
 
-`Status` reports `state` (`idle`, `running`, `failed`), and while running or
-failed, `step` and `step_index`. A `failed` status adds `error`, `report`, and
+`Status` reports `state` (`idle`, `running`, `paused`, `failed`), and while running or
+failed, `step` and `step_index`. A `paused` status reports `completed` and `next`. A `failed` status adds `error`, `report`, and
 `latched`, plus `knife_offset_mm`, `drive_ready`, and `arm_at_wp5` where the
 hardware could be read — each is omitted rather than guessed if its read fails.
 `arm_at_wp5` is never reported for a `not_started` failure, since the arm never
