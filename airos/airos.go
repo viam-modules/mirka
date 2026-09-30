@@ -189,12 +189,9 @@ func (s *sander) stop() error {
 	return s.stopLocked()
 }
 
-// stopLocked is idempotent. The drive rejects a STOP write with Modbus
-// exception 0x04 when it is not running, so on that exception we read the
-// actual state back and succeed if RUN is clear. The write goes first (not a
-// read-then-write) so stopping a spinning tool never waits on an extra round
-// trip. s.running is not consulted: it is in-memory only and is wrong after a
-// module restart that left the spindle running.
+// stopLocked is idempotent: the drive rejects STOP with exception 0x04 when
+// idle, so on 0x04 we succeed if a read-back shows RUN clear. s.running isn't
+// trusted because it's stale after a module restart.
 func (s *sander) stopLocked() error {
 	if err := s.client.WriteRegister(regOperation, opStop); err != nil {
 		if !errors.Is(err, modbus.ErrServerDeviceFailure) {
