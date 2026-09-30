@@ -469,3 +469,119 @@ survive a reboot, and viam-server would then fail to reach the master with only 
 connect timeout to explain it. Configure it with **no gateway**, or a
 point-to-point industrial link will displace the default route on the interface
 carrying general traffic.
+
+## viam:mirka:autochanger-remover-svc
+
+A **generic service** that runs the Mirka AutoChanger disc-removal cycle end to
+end: stops the spindle, plans the arm to the remover avoiding the piece, and
+alternates arm waypoints with knife moves in the manual's order. `remove` ends
+with the arm in free space at wp5, clear of the changer; it does not return the
+arm anywhere, and the caller owns the return trip. It drives the
+`viam:mirka:autochanger-remover` gantry and the `viam:mirka:airos-550cv`
+spindle as dependencies and does not modify either.
+
+### Configuration for autochanger-remover-svc model
+
+```json
+{
+    "remover": "remover",
+    "arm": "arm",
+    "mirka": "airos",
+    "tool_frame": "compliance",
+    "obstacle_visions": ["snapshot_mesh_vision_service"],
+    "input_range_override": { "arm": { "2": { "min": -4.0, "max": 0.0 } } },
+    "grip_offset_mm": 0.7
+}
+```
+
+#### Attributes
+
+Every field is something the service cannot derive on its own:
+
+| Name                    | Type            | Inclusion | Why it can't be derived                                                                   |
+| ----------------------- | --------------- | --------- | ------------------------------------------------------------------------------------------ |
+| `remover`               | string          | Required  | Which gantry resource is the AutoChanger remover.                                          |
+| `arm`                   | string          | Required  | Which arm resource to plan and move.                                                       |
+| `mirka`                 | string          | Required  | Which generic resource is the spindle to stop in preflight.                                |
+| `tool_frame`            | string          | Required  | Which frame carries the pad geometry; there is no convention to guess it from.             |
+| `obstacle_visions`      | list of string  | Optional  | Vision services whose objects are obstacles, such as the pass mesh. Without any, the cycle plans against the frame system alone. |
+| `input_range_override`  | object          | Optional  | Joint limits that tighten the arm model's, as in the sanding config. |
+| `grip_offset_mm`        | float64         | Required  | The one disc-dependent number the manual leaves to the integrator; a process parameter, not a hardware fact. Must be strictly between `0` and `25`. |
+| `contact_frames`        | list of string  | Optional  | End-of-arm frames besides `tool_frame` that may touch the remover in contact steps. The press into the sprung plate is modelled as the pad sinking into a rigid body, so any geometry less than the 10 mm press depth behind the pad face reads as a collision. Which frames those are depends on how the cell models its end effector. Must not list `tool_frame`. |
+| `contact_speed_degs_per_sec` | float | Optional | Joint speed for the contact steps, wp2 to wp5, in place of the arm's configured speed, so the press, lift, tilt and retreat stay slow whatever the arm is set to. The free move to wp1 keeps the arm's own speed. Default 10. |
+| `contact_acceleration_degs_per_sec_per_sec` | float | Optional | Joint acceleration for the contact steps, as above. Default 20. |
+
+### DoCommand
+
+| Call | Behaviour |
+|---|---|
+| `{"command": "remove"}` | Preflight, which plans every arm step before anything moves and refuses (`not_started`) if any cannot be planned, then run the stored paths. Blocks. One at a time — a second call while running is refused. Refused while the last result is a latched failure. Context cancel aborts the cycle and stops both actuators; no recovery is attempted. |
+| `{"command": "reset"}` | Clears a latched failure back to idle. Moves nothing and reads nothing — it only records that a human has recovered the cell. Refused while `remove` is running. |
+
+```json
+{ "command": "remove" }
+```
+
+Response:
+
+```json
+{ "removed": true }
+```
+
+```json
+{ "command": "reset" }
+```
+
+Response:
+
+```json
+{ "state": "idle" }
+```
+
+### Preconditions
+
+Owned by the caller, not checked beyond what preflight can see:
+
+- The arm is retreated from contact and not moving.
+- Any `obstacle_visions` answer: a vision that errors, rather than returning nothing, fails preflight.
+- The remover's frame is calibrated (touched off against the plate) — every waypoint is relative to it.
+- `tool_frame` follows the pad contract the waypoints are built on: its origin is the centre of the pad face, its +Z is the outward pad normal, and its one geometry (a box or capsule, the pad) sits behind the face along −Z. Preflight checks this in the tool frame and refuses when the geometry is rotated more than 1°, off-centre in X or Y by more than 1 mm, or its +Z face is more than 1 mm off `z = 0` — a tool frame 30 mm above the face would otherwise press 40 mm at wp2.
+- `input_range_override`, if the sanding config sets one, matches it.
+
+### Status
+
+`Status` reports `state` (`idle`, `running`, `failed`), and while running or
+failed, `step` and `step_index`. A `failed` status adds `error`, `report`, and
+`latched`, plus `knife_offset_mm`, `drive_ready`, and `arm_at_wp5` where the
+hardware could be read — each is omitted rather than guessed if its read fails.
+`arm_at_wp5` is never reported for a `not_started` failure, since the arm never
+left free space.
+
+A failure after preflight latches `remove` refused until `reset`; a
+`not_started` preflight refusal does not latch, because the arm never moved
+toward the changer. The latch lives in memory, so any rebuild of the service
+— a module restart or a reconfigure — clears it; check the cell before calling
+`remove` after either. A rebuild also closes the old instance, which cancels a
+running `remove`, stops both actuators, and returns only once the cycle has ended.
+What each failure leaves in the cell:
+
+| Step | Failure leaves | Disc | Reported as |
+|---|---|---|---|
+| preflight, including planning every arm step | nothing moved, except knife possibly moved to grip and spindle stopped | on pad | `not_started` plus reason |
+| wp1 transit | arm in free space | on pad | `arm_displaced` |
+| wp2 press, wp3 lift | pad against plate or knife partly under disc | on pad, edge may be lifted | `in_contact` |
+| knife clamp | pad at wp3, knife between grip and flush | edge maybe pinched | `in_contact` |
+| wp4 tilt, wp5 back | pad peeling away, disc clamped | partly or fully off, held by knife | `in_contact` |
+| knife release, knife grip | arm clear at wp5 | in knife or dropped, unknown | `knife_holding` |
+
+Operator recovery sequence: send the arm home, then `quit_error` on the
+remover driver if it has latched a drive fault, then `reset` on this service,
+then resume the pass. The service never sends `quit_error` itself and never
+auto-recovers — a fault latched for a reason, and clearing and retrying blind
+is how a jam becomes a bent blade.
+
+### Removal cycle and waypoints
+
+The step sequence, how each waypoint is derived from the remover model, the
+planning constraints, and the tuning constants are in
+[removersvc/README.md](removersvc/README.md).
