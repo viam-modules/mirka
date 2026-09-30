@@ -15,6 +15,11 @@
       "api": "rdk:component:gantry",
       "model": "viam:mirka:autochanger-remover",
       "short_description": "Mirka AutoChanger remover knife, a single-axis gantry via IFM AL1342 IO-Link master"
+    },
+    {
+      "api": "rdk:service:generic",
+      "model": "viam:mirka:autochanger-remover-svc",
+      "short_description": "Runs the Mirka AutoChanger disc-removal cycle: arm waypoints and knife moves in the manual's order"
     }
   ],
   "entrypoint": "bin/viam-mirka",
