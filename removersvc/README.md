@@ -1,7 +1,8 @@
 # Remover service: removal cycle and waypoints
 
 How the `viam:mirka:autochanger-remover-svc` service takes a used disc off the
-pad: the removal process itself, and how each arm pose is derived.
+pad. Configuration and the DoCommand API are in the [module README](../README.md);
+this file is the removal process itself, and how each arm pose is derived.
 
 ## The removal cycle
 
@@ -107,3 +108,18 @@ was built: in process the model keeps its own name (`autochanger-remover:body`),
 but a module receives the frame system as a proto, and RDK renames a model
 rebuilt from one after its frame, the component (`remover:body`). So preflight
 reads the three labels from the remover frame's own geometries by link id.
+
+## Running a cycle
+
+Preflight plans every arm step, wp1 to wp5, before anything moves. Each step
+is planned from where the previous one ends, with the knife joint set to where
+the cycle will have driven it, since the knife geometry moves between grip and
+flush. If any step cannot be planned, the cycle is refused as `not_started`
+with nothing moved, rather than failing later with the pad pressed into the
+plate. Only then does preflight stop the spindle and move the knife to grip.
+
+Each arm step then runs its stored path, and refuses unless every arm joint is
+within 0.01 rad (about 2 mm at the pad) of where that path starts. The free move
+to wp1 runs at the arm's configured speed; the contact steps run at
+`contact_speed_degs_per_sec` and `contact_acceleration_degs_per_sec_per_sec`
+(10 °/s and 20 °/s² by default), whatever the arm is set to.
