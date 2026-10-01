@@ -189,9 +189,18 @@ func (s *sander) stop() error {
 	return s.stopLocked()
 }
 
+// stopLocked is idempotent: the drive rejects STOP with exception 0x04 when
+// idle, so on 0x04 we succeed if a read-back shows RUN clear. s.running isn't
+// trusted because it's stale after a module restart.
 func (s *sander) stopLocked() error {
 	if err := s.client.WriteRegister(regOperation, opStop); err != nil {
-		return fmt.Errorf("write STOP: %w", err)
+		if !errors.Is(err, modbus.ErrServerDeviceFailure) {
+			return fmt.Errorf("write STOP: %w", err)
+		}
+		state, rerr := s.client.ReadRegister(regOperation, modbus.HOLDING_REGISTER)
+		if rerr != nil || state&opRun != 0 {
+			return fmt.Errorf("write STOP: %w", err)
+		}
 	}
 	s.running = false
 	return nil
