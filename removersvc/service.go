@@ -45,9 +45,12 @@ const startToleranceRad = 0.01
 const stopTimeout = 5 * time.Second
 
 type cycleState struct {
-	state     string // idle, running, failed
+	state     string // idle, running, paused, failed
 	step      string
 	stepIndex int
+	// Paused only: the step just finished and the next.
+	completed string
+	next      string
 	err       error
 	report    report
 	latched   bool
@@ -74,6 +77,9 @@ type service struct {
 	cycle sync.Mutex
 	mu    sync.Mutex // guards st
 	st    cycleState
+
+	// A cycle paused by the step command. Guarded by cycle.
+	paused *pausedCycle
 
 	// Whether the tool frame is at waypoint i; a field so tests can fake it.
 	atWaypoint func(ctx context.Context, p *prepared, i int) (bool, error)
@@ -144,21 +150,24 @@ func (s *service) Close(context.Context) error {
 func (s *service) DoCommand(ctx context.Context, cmd map[string]interface{}) (map[string]interface{}, error) {
 	switch cmd["command"] {
 	case "remove":
-		return s.remove(ctx)
+		return s.run(ctx, false)
+	case "step":
+		return s.run(ctx, true)
 	case "reset":
 		return s.reset()
 	default:
-		return nil, fmt.Errorf("unknown command %v (supported: remove, reset)", cmd["command"])
+		return nil, fmt.Errorf("unknown command %v (supported: remove, step, reset)", cmd["command"])
 	}
 }
 
 // reset records that a human has recovered the cell, clearing a latched
-// failure. It moves and reads nothing.
+// failure or abandoning a paused cycle. It moves and reads nothing.
 func (s *service) reset() (map[string]interface{}, error) {
 	if !s.cycle.TryLock() {
 		return nil, errors.New("remove is running; reset applies only to a stopped cycle")
 	}
 	defer s.cycle.Unlock()
+	s.paused = nil
 	s.mu.Lock()
 	s.st = cycleState{state: "idle", stepIndex: -1}
 	s.mu.Unlock()
@@ -176,9 +185,15 @@ type prepared struct {
 	paths [5][][]referenceframe.Input
 }
 
-// remove runs the whole cycle: preflight, which plans every arm step, then
-// each step's stored path in order.
-func (s *service) remove(ctx context.Context) (map[string]interface{}, error) {
+// pausedCycle is the prepared cycle and the index of its next step.
+type pausedCycle struct {
+	p    *prepared
+	next int
+}
+
+// run runs every remaining step for remove, or one for step, which then
+// pauses. A fresh cycle starts with preflight; a paused one resumes.
+func (s *service) run(ctx context.Context, once bool) (map[string]interface{}, error) {
 	if !s.cycle.TryLock() {
 		return nil, errors.New("remove is already running")
 	}
@@ -199,24 +214,68 @@ func (s *service) remove(ctx context.Context) (map[string]interface{}, error) {
 	}
 	s.mu.Unlock()
 
-	s.setRunning("preflight", -1)
-	p, err := s.preflight(ctx)
-	if err != nil {
-		s.failCycle(ctx, -1, "preflight", reportNotStarted, err, p)
-		return nil, err
+	var p *prepared
+	next := 0
+	if s.paused != nil {
+		p, next = s.paused.p, s.paused.next
+		if err := s.checkResume(ctx, p, next); err != nil {
+			return nil, err
+		}
+		s.paused = nil
+	} else {
+		s.setRunning("preflight", -1)
+		var err error
+		p, err = s.preflight(ctx)
+		if err != nil {
+			s.failCycle(ctx, -1, "preflight", reportNotStarted, err, p)
+			return nil, err
+		}
+		if once {
+			return s.pause(p, 0, "preflight"), nil
+		}
 	}
-	for i, st := range removalSteps {
+
+	for i := next; i < len(removalSteps); i++ {
+		st := removalSteps[i]
 		s.setRunning(st.name, i)
 		if err := s.runStep(ctx, p, st); err != nil {
 			err = fmt.Errorf("remove step %s: %w", st.name, err)
 			s.failCycle(ctx, i, st.name, st.report, err, p)
 			return nil, err
 		}
+		if once && i+1 < len(removalSteps) {
+			return s.pause(p, i+1, st.name), nil
+		}
 	}
 	s.mu.Lock()
 	s.st = cycleState{state: "idle", stepIndex: -1}
 	s.mu.Unlock()
-	return map[string]interface{}{"removed": true}, nil
+	out := map[string]interface{}{"removed": true}
+	if once {
+		out["completed"] = removalSteps[len(removalSteps)-1].name
+	}
+	return out, nil
+}
+
+// checkResume refuses, moving nothing, unless the arm is still where the last
+// arm step left it: people jog the arm while paused.
+func (s *service) checkResume(ctx context.Context, p *prepared, next int) error {
+	last := -1
+	for i := next - 1; i >= 0; i-- {
+		if removalSteps[i].kind == armStep {
+			last = i
+			break
+		}
+	}
+	if last < 0 {
+		return nil
+	}
+	name, path := removalSteps[last].name, p.paths[removalSteps[last].waypoint]
+	if err := s.armAtJoints(ctx, path[len(path)-1]); err != nil {
+		return fmt.Errorf("arm is not at %s, where the cycle paused (%w); return it there, or send reset to abandon the cycle",
+			name, err)
+	}
+	return nil
 }
 
 // armAtJoints refuses unless every arm joint is within startToleranceRad of want.
@@ -241,6 +300,16 @@ func (s *service) setRunning(step string, index int) {
 	s.mu.Lock()
 	s.st = cycleState{state: "running", step: step, stepIndex: index}
 	s.mu.Unlock()
+}
+
+// pause holds the cycle before removalSteps[next]. The caller holds cycle.
+func (s *service) pause(p *prepared, next int, completed string) map[string]interface{} {
+	s.paused = &pausedCycle{p: p, next: next}
+	s.mu.Lock()
+	s.st = cycleState{state: "paused", step: completed, stepIndex: next - 1,
+		completed: completed, next: removalSteps[next].name}
+	s.mu.Unlock()
+	return map[string]interface{}{"completed": completed, "next": removalSteps[next].name}
 }
 
 // preflight plans the whole cycle before anything moves, so an unplannable one
@@ -461,6 +530,10 @@ func (s *service) Status(ctx context.Context) (map[string]interface{}, error) {
 	out := map[string]interface{}{"state": st.state}
 	switch st.state {
 	case "idle":
+		return out, nil
+	case "paused":
+		out["completed"] = st.completed
+		out["next"] = st.next
 		return out, nil
 	}
 	out["step"] = st.step
