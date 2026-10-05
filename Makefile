@@ -42,4 +42,10 @@ module: test module.tar.gz
 all: test module.tar.gz
 
 setup:
+ifeq ($(shell uname), Darwin)
+	brew tap viamrobotics/brews
+	brew install nlopt-static
+else ifeq ($(shell uname), Linux)
+	sudo apt-get install -y --no-install-recommends libnlopt-dev
+endif
 	go mod tidy
