@@ -479,3 +479,145 @@ func TestContactStepsMoveSlowly(t *testing.T) {
 		})
 	}
 }
+
+func doStep(r *rig) (map[string]interface{}, error) {
+	return r.svc.DoCommand(context.Background(), map[string]interface{}{"command": "step"})
+}
+
+var fullSequence = []string{
+	"plan", "plan", "plan", "plan", "plan",
+	"mirka.stop", "knife.0.7",
+	"arm.move", "arm.move", "arm.move",
+	"knife.0",
+	"arm.move", "arm.move",
+	"knife.25", "knife.0.7",
+}
+
+var preflightSequence = []string{"plan", "plan", "plan", "plan", "plan", "mirka.stop", "knife.0.7"}
+
+func TestStepWalksTheSequence(t *testing.T) {
+	r := newRig(t)
+
+	out, err := doStep(r)
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, out, test.ShouldResemble, map[string]interface{}{"completed": "preflight", "next": "wp1"})
+	test.That(t, r.log(), test.ShouldResemble, preflightSequence)
+	st := status(t, r)
+	test.That(t, st["state"], test.ShouldEqual, "paused")
+	test.That(t, st["completed"], test.ShouldEqual, "preflight")
+	test.That(t, st["next"], test.ShouldEqual, "wp1")
+
+	out, err = doStep(r)
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, out, test.ShouldResemble, map[string]interface{}{"completed": "wp1", "next": "wp2"})
+	test.That(t, r.log(), test.ShouldResemble, append(append([]string(nil), preflightSequence...), "arm.move"))
+
+	for i := 1; i < len(removalSteps)-1; i++ {
+		out, err = doStep(r)
+		test.That(t, err, test.ShouldBeNil)
+		test.That(t, out["completed"], test.ShouldEqual, removalSteps[i].name)
+		test.That(t, out["next"], test.ShouldEqual, removalSteps[i+1].name)
+	}
+	out, err = doStep(r)
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, out, test.ShouldResemble, map[string]interface{}{"completed": "regrip", "removed": true})
+	test.That(t, r.log(), test.ShouldResemble, fullSequence)
+	test.That(t, status(t, r)["state"], test.ShouldEqual, "idle")
+}
+
+func TestRemoveFinishesAPausedCycle(t *testing.T) {
+	r := newRig(t)
+	_, err := doStep(r)
+	test.That(t, err, test.ShouldBeNil)
+	_, err = doStep(r)
+	test.That(t, err, test.ShouldBeNil)
+
+	out, err := doRemove(r)
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, out["removed"], test.ShouldEqual, true)
+	// Preflight ran once: remove picked up where the steps left off.
+	test.That(t, r.log(), test.ShouldResemble, fullSequence)
+	test.That(t, status(t, r)["state"], test.ShouldEqual, "idle")
+}
+
+func TestResetAbandonsAPausedCycle(t *testing.T) {
+	r := newRig(t)
+	_, err := doStep(r)
+	test.That(t, err, test.ShouldBeNil)
+
+	out, err := r.svc.DoCommand(context.Background(), map[string]interface{}{"command": "reset"})
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, out["state"], test.ShouldEqual, "idle")
+	test.That(t, status(t, r)["state"], test.ShouldEqual, "idle")
+
+	// The next step starts over at preflight.
+	out, err = doStep(r)
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, out["completed"], test.ShouldEqual, "preflight")
+	test.That(t, r.log(), test.ShouldResemble, append(append([]string(nil), preflightSequence...), preflightSequence...))
+}
+
+func TestResumeRefusedWhenArmHasMoved(t *testing.T) {
+	r := newRig(t)
+	_, err := doStep(r)
+	test.That(t, err, test.ShouldBeNil)
+	// Resuming at wp1 checks nothing.
+	_, err = doStep(r)
+	test.That(t, err, test.ShouldBeNil)
+	before := len(r.log())
+
+	r.moveArm([]referenceframe.Input{0.5}) // jogged while paused
+	_, err = doStep(r)
+	test.That(t, err, test.ShouldNotBeNil)
+	test.That(t, err.Error(), test.ShouldContainSubstring, "not at wp1")
+	test.That(t, len(r.log()), test.ShouldEqual, before)
+	st := status(t, r)
+	test.That(t, st["state"], test.ShouldEqual, "paused")
+	test.That(t, st["next"], test.ShouldEqual, "wp2")
+
+	_, err = doRemove(r)
+	test.That(t, err, test.ShouldNotBeNil)
+	test.That(t, err.Error(), test.ShouldContainSubstring, "not at wp1")
+	test.That(t, len(r.log()), test.ShouldEqual, before)
+
+	r.moveArm([]referenceframe.Input{0}) // returned to wp1
+	out, err := doStep(r)
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, out["completed"], test.ShouldEqual, "wp2")
+}
+
+func TestResumeChecksTheLastWaypointBeforeAKnifeStep(t *testing.T) {
+	r := newRig(t)
+	for i := 0; i < 4; i++ { // preflight, wp1, wp2, wp3
+		_, err := doStep(r)
+		test.That(t, err, test.ShouldBeNil)
+	}
+	r.moveArm([]referenceframe.Input{0.5})
+	_, err := doStep(r) // clamp, which needs the arm still at wp3
+	test.That(t, err, test.ShouldNotBeNil)
+	test.That(t, err.Error(), test.ShouldContainSubstring, "not at wp3")
+	test.That(t, r.log(), test.ShouldNotContain, "knife.0")
+}
+
+func TestStepFailureLatches(t *testing.T) {
+	r := newRig(t)
+	_, err := doStep(r)
+	test.That(t, err, test.ShouldBeNil)
+	_, err = doStep(r)
+	test.That(t, err, test.ShouldBeNil)
+	r.arm.MoveThroughJointPositionsFunc = func(context.Context, [][]referenceframe.Input, *arm.MoveOptions, map[string]interface{}) error {
+		return errors.New("protective stop")
+	}
+
+	_, err = doStep(r)
+	test.That(t, err, test.ShouldNotBeNil)
+	st := status(t, r)
+	test.That(t, st["state"], test.ShouldEqual, "failed")
+	test.That(t, st["step"], test.ShouldEqual, "wp2")
+	test.That(t, st["report"], test.ShouldEqual, "in_contact")
+	test.That(t, st["latched"], test.ShouldEqual, true)
+
+	_, err = doStep(r)
+	test.That(t, err, test.ShouldNotBeNil)
+	test.That(t, err.Error(), test.ShouldContainSubstring, "reset")
+}
