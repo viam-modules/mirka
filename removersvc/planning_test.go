@@ -18,9 +18,7 @@ func TestRemoverGeometryNames(t *testing.T) {
 	fs := testFrameSystem(t)
 	names, err := removerGeometryNames(fs, referenceframe.NewZeroInputs(fs), "remover")
 	test.That(t, err, test.ShouldBeNil)
-	test.That(t, names, test.ShouldResemble, []string{
-		"autochanger-remover:body", "autochanger-remover:blade", "autochanger-remover:head",
-	})
+	test.That(t, names, test.ShouldResemble, testRemoverGeoms)
 
 	parts := testParts(t)
 	for i, part := range parts {
@@ -33,7 +31,7 @@ func TestRemoverGeometryNames(t *testing.T) {
 	test.That(t, err, test.ShouldBeNil)
 	names, err = removerGeometryNames(overWire, referenceframe.NewZeroInputs(overWire), "remover")
 	test.That(t, err, test.ShouldBeNil)
-	test.That(t, names, test.ShouldResemble, []string{"remover:body", "remover:blade", "remover:head"})
+	test.That(t, names, test.ShouldResemble, []string{"remover:body", "remover:blade", "remover:head", "remover:head-left", "remover:head-right"})
 }
 
 func TestRemoverGeometryNamesRefusesWithoutRemover(t *testing.T) {
@@ -132,7 +130,10 @@ func TestPadRadiusChecksInToolFrame(t *testing.T) {
 }
 
 // testRemoverGeoms are the remover geometry labels in testFrameSystem.
-var testRemoverGeoms = []string{"autochanger-remover:body", "autochanger-remover:blade", "autochanger-remover:head"}
+var testRemoverGeoms = []string{
+	"autochanger-remover:body", "autochanger-remover:blade", "autochanger-remover:head",
+	"autochanger-remover:head-left", "autochanger-remover:head-right",
+}
 
 func TestBuildRequest(t *testing.T) {
 	fs := testFrameSystem(t)

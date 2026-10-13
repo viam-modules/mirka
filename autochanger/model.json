@@ -56,13 +56,73 @@
         "type": "box",
         "x": 20,
         "y": 180,
-        "z": 120,
+        "z": 68.4,
         "translation": {
           "x": 12,
           "y": 0,
-          "z": -60.0
+          "z": -34.2
         },
         "label": "knife_head"
+      }
+    },
+    {
+      "id": "head-left",
+      "parent": "head",
+      "translation": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "geometry": {
+        "type": "box",
+        "x": 20,
+        "y": 87,
+        "z": 45,
+        "translation": {
+          "x": 12,
+          "y": -67.786,
+          "z": -79.125
+        },
+        "orientation": {
+          "type": "axis_angles",
+          "value": {
+            "th": 0.6981317008,
+            "x": 1,
+            "y": 0,
+            "z": 0
+          }
+        },
+        "label": "bumper_left"
+      }
+    },
+    {
+      "id": "head-right",
+      "parent": "head-left",
+      "translation": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "geometry": {
+        "type": "box",
+        "x": 20,
+        "y": 87,
+        "z": 45,
+        "translation": {
+          "x": 12,
+          "y": 67.786,
+          "z": -79.125
+        },
+        "orientation": {
+          "type": "axis_angles",
+          "value": {
+            "th": -0.6981317008,
+            "x": 1,
+            "y": 0,
+            "z": 0
+          }
+        },
+        "label": "bumper_right"
       }
     }
   ],
