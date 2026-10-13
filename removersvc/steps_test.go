@@ -187,12 +187,20 @@ func TestBumperWaypoints(t *testing.T) {
 			test.That(t, collidesWith(t, padAt(t, lifted), flush), test.ShouldBeEmpty)
 		}
 	})
-	t.Run("both pushes end seated against both slopes", func(t *testing.T) {
-		test.That(t, wps[2], test.ShouldResemble, wps[4])
-		for _, side := range []float64{1, -1} {
-			test.That(t, slopeGap(f, hung(wps[2]), side), test.ShouldAlmostEqual, testPadRadiusMM, 1e-9)
+	t.Run("each push ends just past the seat, out toward its own slope and up", func(t *testing.T) {
+		for _, c := range []struct {
+			i    int
+			side float64
+		}{{2, 1}, {4, -1}} {
+			seat := yz(wps[c.i]).Sub(r3.Vector{Y: c.side * centrePushOutMM, Z: centrePushUpMM})
+			test.That(t, seat.Y, test.ShouldAlmostEqual, 0, 1e-9)
+			for _, side := range []float64{1, -1} {
+				test.That(t, slopeGap(f, seat.Sub(r3.Vector{Z: orbitRadiusMM}), side), test.ShouldAlmostEqual, testPadRadiusMM, 1e-9)
+			}
+			// Pressed into its own slope by a couple of millimetres, no more.
+			press := testPadRadiusMM - slopeGap(f, hung(wps[c.i]), c.side)
+			test.That(t, press, test.ShouldBeBetween, 0, 3.5)
 		}
-		test.That(t, wps[2].Point().Y, test.ShouldAlmostEqual, 0, 1e-9)
 	})
 	t.Run("each push meets its own slope first, clear of the other by more than the orbit", func(t *testing.T) {
 		for _, c := range []struct {

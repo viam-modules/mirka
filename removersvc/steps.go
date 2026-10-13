@@ -129,6 +129,10 @@ const (
 	foldPressMM      = 1.0  // how far the pad edge rides up past the groove faces
 	foldPastMM       = 10.0 // the fold stroke ends this far past the head's front
 	bumperClearMM    = 5.0  // pad top below the head's box between bumper moves
+	// Each push ends this far past the seat, out toward its own slope and up,
+	// pressing into the pad's foam; tuned on lab-sander-1.
+	centrePushOutMM = 1.0
+	centrePushUpMM  = 3.0
 )
 
 // removerFeatures are the faces the waypoints are measured from.
@@ -228,6 +232,8 @@ func bumperWaypoints(f removerFeatures, padRadiusMM float64) []spatialmath.Pose 
 	// above it.
 	seatZ := (bumperFlatHalfMM*math.Sin(th)+flatZ*math.Cos(th)-padRadiusMM)/math.Cos(th) + orbitRadiusMM
 	seat := r3.Vector{X: x, Z: seatZ}
+	pushRight := seat.Add(r3.Vector{Y: centrePushOutMM, Z: centrePushUpMM})
+	pushLeft := seat.Add(r3.Vector{Y: -centrePushOutMM, Z: centrePushUpMM})
 	// Unit normals into the right and left slopes.
 	intoRight := r3.Vector{Y: math.Sin(th), Z: math.Cos(th)}
 	intoLeft := r3.Vector{Y: -math.Sin(th), Z: math.Cos(th)}
@@ -239,10 +245,10 @@ func bumperWaypoints(f removerFeatures, padRadiusMM float64) []spatialmath.Pose 
 	below := func(y float64) spatialmath.Pose { return at(r3.Vector{X: x, Y: y, Z: clearZ}) }
 	return []spatialmath.Pose{
 		below(0),
-		at(seat.Sub(intoRight.Mul(centreApproachMM))),
-		at(seat),
-		at(seat.Sub(intoLeft.Mul(centreApproachMM))),
-		at(seat),
+		at(pushRight.Sub(intoRight.Mul(centreApproachMM))),
+		at(pushRight),
+		at(pushLeft.Sub(intoLeft.Mul(centreApproachMM))),
+		at(pushLeft),
 		below(0),
 		below(-bumperCornerYMM),
 		at(r3.Vector{X: x, Y: -bumperCornerYMM, Z: foldZ}),
