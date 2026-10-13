@@ -5,7 +5,9 @@ pad: the removal process itself, and how each arm pose is derived.
 
 ## The removal cycle
 
-The sequence follows the Mirka AutoChanger manual's removal steps. Arm and
+The sequence follows the removal steps in *Manual - Mirka AutoChanger*,
+downloadable from
+[Mirka's technical documents](https://www.mirka.com/en-us/support/downloads/technical-documents/?currentPage=1&searchTerm=autochanger). Arm and
 knife strictly alternate: every knife move happens with the arm parked. The
 manual's bumper pre-steps (orbit centring and folding the disc edge down) are
 not implemented, so the waypoints assume a centred orbit.
@@ -66,8 +68,7 @@ tilt does not load the end-effector stack.
 
 ## Tuning
 
-The distances are constants in `steps.go`, from the manual or tuned on
-lab-sander-1:
+The distances are constants in `steps.go`, from the manual:
 
 | Constant | Value | Source |
 |---|---|---|
@@ -79,5 +80,5 @@ lab-sander-1:
 | `tiltBackoffMM` | 5 mm | tuned: eases the tilt off the plate |
 | `retreatMM` | 60 mm | integrator's choice: wp5 along +X and +Z |
 
-Changing one changes the cycle for every disc; a constant moves to config only
+Changing one changes the cycle for every disc; a constant should move to config only
 if tuning shows it varies by disc.
