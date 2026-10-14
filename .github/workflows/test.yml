@@ -25,6 +25,11 @@ jobs:
         with:
           go-version-file: go.mod
 
+      # armplanning links nlopt through cgo. The same package as `make setup`
+      # installs, without the go mod tidy that target also runs.
+      - name: Install nlopt
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libnlopt-dev
+
       # `make lint` rewrites files rather than reporting, so a non-empty diff
       # afterwards is the failure signal.
       - name: Lint
