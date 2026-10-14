@@ -515,8 +515,7 @@ Every field is something the service cannot derive on its own:
 
 | Call | Behaviour |
 |---|---|
-| `{"command": "remove"}` | Preflight, which plans every arm step before anything moves and refuses (`not_started`) if any cannot be planned, then run the stored paths. Blocks. One at a time — a second call while running is refused. Refused while the last result is a latched failure. Context cancel aborts the cycle and stops both actuators; no recovery is attempted. |
-| `{"command": "reset"}` | Clears a latched failure back to idle. Moves nothing and reads nothing — it only records that a human has recovered the cell. Refused while `remove` is running. |
+| `{"command": "remove"}` | Preflight, which plans every arm step before anything moves and refuses (`not_started`) if any cannot be planned, then run the stored paths. Blocks. One at a time — a second call while running is refused. A failure is reported, not latched: the next call starts afresh with preflight. Context cancel aborts the cycle and stops both actuators; no recovery is attempted. |
 
 ```json
 { "command": "remove" }
@@ -528,21 +527,11 @@ Response:
 { "removed": true }
 ```
 
-```json
-{ "command": "reset" }
-```
-
-Response:
-
-```json
-{ "state": "idle" }
-```
-
 ### Preconditions
 
 Owned by the caller, not checked beyond what preflight can see:
 
-- The arm is retreated from contact and not moving.
+- The arm is not moving. Preflight checks this, and refuses (`not_started`) while `tool_frame` or any `contact_frames` geometry touches the remover: the planner would otherwise drive a pad left in contact out along an unconstrained path.
 - Any `obstacle_visions` answer: a vision that errors, rather than returning nothing, fails preflight.
 - The remover's frame is calibrated (touched off against the plate) — every waypoint is relative to it.
 - `tool_frame` follows the pad contract the waypoints are built on: its origin is the centre of the pad face, its +Z is the outward pad normal, and its one geometry (a box or capsule, the pad) sits behind the face along −Z. Preflight checks this in the tool frame and refuses when the geometry is rotated more than 1°, off-centre in X or Y by more than 1 mm, or its +Z face is more than 1 mm off `z = 0` — a tool frame 30 mm above the face would otherwise press 40 mm at wp2.
@@ -551,17 +540,17 @@ Owned by the caller, not checked beyond what preflight can see:
 ### Status
 
 `Status` reports `state` (`idle`, `running`, `failed`), and while running or
-failed, `step` and `step_index`. A `failed` status adds `error`, `report`, and
-`latched`, plus `knife_offset_mm`, `drive_ready`, and `arm_at_wp5` where the
+failed, `step` and `step_index`. A `failed` status adds `error` and `report`,
+plus `knife_offset_mm`, `drive_ready`, and `arm_at_wp5` where the
 hardware could be read — each is omitted rather than guessed if its read fails.
 `arm_at_wp5` is never reported for a `not_started` failure, since the arm never
 left free space.
 
-A failure after preflight latches `remove` refused until `reset`; a
-`not_started` preflight refusal does not latch, because the arm never moved
-toward the changer. The latch lives in memory, so any rebuild of the service
-— a module restart or a reconfigure — clears it; check the cell before calling
-`remove` after either. A rebuild also closes the old instance, which cancels a
+A failure is reported until the next `remove`, which starts afresh with
+preflight. Nothing latches: a caller that loops `remove` must stop on an error
+itself. A pad left in contact is refused by preflight; a disc left in the knife
+or on the pad is not detectable, so check the cell before calling `remove`
+after a failure. A rebuild of the service also closes the old instance, which cancels a
 running `remove`, stops both actuators, and returns only once the cycle has ended.
 What each failure leaves in the cell:
 
@@ -575,8 +564,7 @@ What each failure leaves in the cell:
 | knife release, knife grip | arm clear at wp5 | in knife or dropped, unknown | `knife_holding` |
 
 Operator recovery sequence: send the arm home, then `quit_error` on the
-remover driver if it has latched a drive fault, then `reset` on this service,
-then resume the pass. The service never sends `quit_error` itself and never
+remover driver if it has latched a drive fault, then resume the pass. The service never sends `quit_error` itself and never
 auto-recovers — a fault latched for a reason, and clearing and retrying blind
 is how a jam becomes a bent blade.
 
