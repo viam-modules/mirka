@@ -83,6 +83,16 @@ func TestPreflightRefusals(t *testing.T) {
 				spatialmath.NewPoseFromPoint(r3.Vector{X: 1000}), "compliance", placeholder)
 			r.svc.fsSvc = newFakeFSFromParts(t, parts)
 		}, "pad radius"},
+		{"pad touching the remover", func(r *rig) {
+			parts := testParts(t)
+			pad, err := spatialmath.NewBox(spatialmath.NewPoseFromPoint(r3.Vector{Z: -10}),
+				r3.Vector{X: 2 * testPadRadiusMM, Y: 2 * testPadRadiusMM, Z: 20}, "")
+			test.That(t, err, test.ShouldBeNil)
+			// Pressed into the plate face, as a failed cycle can leave it.
+			parts[2].FrameConfig = referenceframe.NewLinkInFrame(referenceframe.World,
+				spatialmath.NewPose(r3.Vector{X: -5, Z: -300}, &spatialmath.OrientationVectorDegrees{OX: -1}), "compliance", pad)
+			r.svc.fsSvc = newFakeFSFromParts(t, parts)
+		}, "touching the remover"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -94,7 +104,6 @@ func TestPreflightRefusals(t *testing.T) {
 			st := status(t, r)
 			test.That(t, st["state"], test.ShouldEqual, "failed")
 			test.That(t, st["report"], test.ShouldEqual, "not_started")
-			test.That(t, st["latched"], test.ShouldEqual, false)
 			test.That(t, r.log(), test.ShouldNotContain, "arm.move")
 		})
 	}
@@ -117,17 +126,9 @@ func TestRemoveWithoutObstacles(t *testing.T) {
 	test.That(t, out["removed"], test.ShouldEqual, true)
 }
 
-func TestNotStartedDoesNotLatch(t *testing.T) {
-	r := newRig(t)
-	r.arm.IsMovingFunc = func(context.Context) (bool, error) { return true, nil }
-	_, err := doRemove(r)
-	test.That(t, err, test.ShouldNotBeNil)
-	r.arm.IsMovingFunc = func(context.Context) (bool, error) { return false, nil }
-	_, err = doRemove(r)
-	test.That(t, err, test.ShouldBeNil)
-}
-
-func TestFailureLatchesUntilReset(t *testing.T) {
+// A failure is reported, not latched: the next remove starts afresh with
+// preflight, which refuses only if the arm is still in contact.
+func TestFailureDoesNotLatch(t *testing.T) {
 	r := newRig(t)
 	moves := 0
 	r.arm.MoveThroughJointPositionsFunc = func(context.Context, [][]referenceframe.Input, *arm.MoveOptions, map[string]interface{}) error {
@@ -140,24 +141,18 @@ func TestFailureLatchesUntilReset(t *testing.T) {
 	_, err := doRemove(r)
 	test.That(t, err, test.ShouldNotBeNil)
 	st := status(t, r)
+	test.That(t, st["state"], test.ShouldEqual, "failed")
 	test.That(t, st["step"], test.ShouldEqual, "wp2")
 	test.That(t, st["step_index"], test.ShouldEqual, 1)
 	test.That(t, st["report"], test.ShouldEqual, "in_contact")
-	test.That(t, st["latched"], test.ShouldEqual, true)
 	test.That(t, st["knife_offset_mm"], test.ShouldEqual, 0.7)
 	test.That(t, st["drive_ready"], test.ShouldEqual, true)
 	test.That(t, st["arm_at_wp5"], test.ShouldEqual, false)
 	test.That(t, st["error"], test.ShouldContainSubstring, "protective stop")
 
-	before := len(r.log())
-	_, err = doRemove(r)
-	test.That(t, err, test.ShouldNotBeNil)
-	test.That(t, err.Error(), test.ShouldContainSubstring, "reset")
-	test.That(t, len(r.log()), test.ShouldEqual, before) // nothing moved, not even the knife
-
-	out, err := r.svc.DoCommand(context.Background(), map[string]interface{}{"command": "reset"})
+	out, err := doRemove(r)
 	test.That(t, err, test.ShouldBeNil)
-	test.That(t, out["state"], test.ShouldEqual, "idle")
+	test.That(t, out["removed"], test.ShouldEqual, true)
 	test.That(t, status(t, r)["state"], test.ShouldEqual, "idle")
 }
 
@@ -207,7 +202,6 @@ func TestFailureReportClasses(t *testing.T) {
 			st := status(t, r)
 			test.That(t, st["step"], test.ShouldEqual, tc.step)
 			test.That(t, st["report"], test.ShouldEqual, tc.report)
-			test.That(t, st["latched"], test.ShouldEqual, true)
 		})
 	}
 }
@@ -230,7 +224,6 @@ func TestPlanFailureRefusesBeforeAnythingMoves(t *testing.T) {
 	st := status(t, r)
 	test.That(t, st["step"], test.ShouldEqual, "preflight")
 	test.That(t, st["report"], test.ShouldEqual, "not_started")
-	test.That(t, st["latched"], test.ShouldEqual, false)
 }
 
 func TestFailureReportSurvivesUnreachableDrive(t *testing.T) {
@@ -283,7 +276,6 @@ func TestCancelStopsBothActuators(t *testing.T) {
 	test.That(t, stopCtxErr, test.ShouldBeNil)
 	st := status(t, r)
 	test.That(t, st["report"], test.ShouldEqual, "in_contact")
-	test.That(t, st["latched"], test.ShouldEqual, true)
 }
 
 func TestCancelDuringPreflightStopsBothActuators(t *testing.T) {
@@ -306,7 +298,6 @@ func TestCancelDuringPreflightStopsBothActuators(t *testing.T) {
 	test.That(t, stopCtxErr, test.ShouldBeNil)
 	st := status(t, r)
 	test.That(t, st["report"], test.ShouldEqual, "not_started")
-	test.That(t, st["latched"], test.ShouldEqual, false)
 }
 
 func TestOneCycleAtATime(t *testing.T) {
@@ -330,8 +321,6 @@ func TestOneCycleAtATime(t *testing.T) {
 	_, err := doRemove(r)
 	test.That(t, err, test.ShouldNotBeNil)
 	test.That(t, err.Error(), test.ShouldContainSubstring, "already running")
-	_, err = r.svc.DoCommand(context.Background(), map[string]interface{}{"command": "reset"})
-	test.That(t, err, test.ShouldNotBeNil)
 
 	close(release)
 	select {
@@ -445,7 +434,6 @@ func TestArmOffThePlannedStartFailsBeforeMoving(t *testing.T) {
 	test.That(t, moves, test.ShouldEqual, 1)
 	st := status(t, r)
 	test.That(t, st["step"], test.ShouldEqual, "wp2")
-	test.That(t, st["latched"], test.ShouldEqual, true)
 }
 
 // Contact steps use the service's limits; wp1 keeps the arm's own.

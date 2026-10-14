@@ -50,7 +50,6 @@ type cycleState struct {
 	stepIndex int
 	err       error
 	report    report
-	latched   bool
 	// Nil when unreadable.
 	knifeOffsetMM *float64
 	driveReady    *bool
@@ -145,24 +144,9 @@ func (s *service) DoCommand(ctx context.Context, cmd map[string]interface{}) (ma
 	switch cmd["command"] {
 	case "remove":
 		return s.remove(ctx)
-	case "reset":
-		return s.reset()
 	default:
-		return nil, fmt.Errorf("unknown command %v (supported: remove, reset)", cmd["command"])
+		return nil, fmt.Errorf("unknown command %v (supported: remove)", cmd["command"])
 	}
-}
-
-// reset records that a human has recovered the cell, clearing a latched
-// failure. It moves and reads nothing.
-func (s *service) reset() (map[string]interface{}, error) {
-	if !s.cycle.TryLock() {
-		return nil, errors.New("remove is running; reset applies only to a stopped cycle")
-	}
-	defer s.cycle.Unlock()
-	s.mu.Lock()
-	s.st = cycleState{state: "idle", stepIndex: -1}
-	s.mu.Unlock()
-	return map[string]interface{}{"state": "idle"}, nil
 }
 
 // prepared is what preflight establishes for the whole cycle.
@@ -189,15 +173,6 @@ func (s *service) remove(ctx context.Context) (map[string]interface{}, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	defer context.AfterFunc(s.closeCtx, cancel)()
-
-	s.mu.Lock()
-	if s.st.latched {
-		st := s.st
-		s.mu.Unlock()
-		return nil, fmt.Errorf("previous remove failed at %s (%s): %v; recover the cell, then send reset",
-			st.step, st.report, st.err)
-	}
-	s.mu.Unlock()
 
 	s.setRunning("preflight", -1)
 	p, err := s.preflight(ctx)
@@ -293,6 +268,9 @@ func (s *service) prepare(ctx context.Context) (*prepared, referenceframe.FrameS
 		return p, nil, err
 	}
 	if p.removerGeoms, err = removerGeometryNames(fs, inputs, s.cfg.Remover); err != nil {
+		return p, nil, err
+	}
+	if err := clearOfRemover(fs, inputs, s.cfg); err != nil {
 		return p, nil, err
 	}
 	features, err := readFeatures(s.cfg.GripOffsetMM)
@@ -415,7 +393,6 @@ func (s *service) fail(ctx context.Context, index int, name string, rep report, 
 	defer cancel()
 	st := cycleState{
 		state: "failed", step: name, stepIndex: index, err: cause, report: rep,
-		latched: rep != reportNotStarted,
 	}
 	if pos, err := s.remover.Position(readCtx, nil); err == nil && len(pos) == 1 {
 		st.knifeOffsetMM = &pos[0]
@@ -431,7 +408,7 @@ func (s *service) fail(ctx context.Context, index int, name string, rep report, 
 			st.armAtWp5 = &at
 		}
 	}
-	s.logger.CErrorw(ctx, "remove failed", "step", name, "report", rep, "latched", st.latched, "err", cause)
+	s.logger.CErrorw(ctx, "remove failed", "step", name, "report", rep, "err", cause)
 	s.mu.Lock()
 	s.st = st
 	s.mu.Unlock()
@@ -469,7 +446,6 @@ func (s *service) Status(ctx context.Context) (map[string]interface{}, error) {
 	}
 	out["error"] = st.err.Error()
 	out["report"] = string(st.report)
-	out["latched"] = st.latched
 	if st.knifeOffsetMM != nil {
 		out["knife_offset_mm"] = *st.knifeOffsetMM
 	}

@@ -140,3 +140,42 @@ func runCycle(t *testing.T, fs *referenceframe.FrameSystem, inputs referencefram
 	}
 	return nil
 }
+
+// The planner lets a free move start pressed into the plate, as a failed cycle
+// can leave the pad, so preflight checks for contact itself.
+func TestPreflightRefusesAStartInContact(t *testing.T) {
+	fs, inputs := reachableCell(t)
+	cfg := validConfig()
+	radius, err := padRadius(fs, inputs, cfg.ToolFrame)
+	test.That(t, err, test.ShouldBeNil)
+	features, err := readFeatures(cfg.GripOffsetMM)
+	test.That(t, err, test.ShouldBeNil)
+	wps := waypoints(features, radius)
+	obstacles := referenceframe.NewGeometriesInFrame(referenceframe.World, nil)
+	geoms, err := removerGeometryNames(fs, inputs, cfg.Remover)
+	test.That(t, err, test.ShouldBeNil)
+	plan := newPlanArm(logging.NewTestLogger(t), cfg.Arm)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+
+	test.That(t, clearOfRemover(fs, inputs, cfg), test.ShouldBeNil)
+
+	// Plan to wp2, the press.
+	inputs[cfg.Remover] = []referenceframe.Input{cfg.GripOffsetMM}
+	for _, i := range []int{0, 1} {
+		req, err := buildRequest(fs, inputs, obstacles, geoms, cfg, wps[i], i > 0)
+		test.That(t, err, test.ShouldBeNil)
+		path, err := plan(ctx, req)
+		test.That(t, err, test.ShouldBeNil)
+		inputs[cfg.Arm] = path[len(path)-1]
+	}
+
+	req, err := buildRequest(fs, inputs, obstacles, geoms, cfg, wps[0], false)
+	test.That(t, err, test.ShouldBeNil)
+	_, err = plan(ctx, req)
+	test.That(t, err, test.ShouldBeNil) // the planner does not refuse it
+
+	err = clearOfRemover(fs, inputs, cfg)
+	test.That(t, err, test.ShouldNotBeNil)
+	test.That(t, err.Error(), test.ShouldContainSubstring, "compliance is touching the remover")
+}
