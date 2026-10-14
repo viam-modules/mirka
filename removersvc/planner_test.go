@@ -123,8 +123,7 @@ func runCycle(t *testing.T, fs *referenceframe.FrameSystem, inputs referencefram
 			inputs[cfg.Remover] = []referenceframe.Input{cfg.knifeOffset(st.knife)}
 			continue
 		}
-		prev := wps[max(st.waypoint-1, 0)]
-		req, err := buildRequest(fs, inputs, obstacles, geoms, cfg, prev, wps[st.waypoint], st.contact)
+		req, err := buildRequest(fs, inputs, obstacles, geoms, cfg, wps[st.waypoint], st.contact)
 		test.That(t, err, test.ShouldBeNil)
 		path, err := plan(ctx, req)
 		if err != nil {

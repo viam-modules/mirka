@@ -141,7 +141,7 @@ func TestBuildRequest(t *testing.T) {
 	obstacles := referenceframe.NewGeometriesInFrame(referenceframe.World, nil)
 	goal := spatialmath.NewPoseFromPoint(r3.Vector{X: 5})
 
-	free, err := buildRequest(fs, inputs, obstacles, testRemoverGeoms, cfg, goal, goal, false)
+	free, err := buildRequest(fs, inputs, obstacles, testRemoverGeoms, cfg, goal, false)
 	test.That(t, err, test.ShouldBeNil)
 	test.That(t, free.Constraints.LinearConstraint, test.ShouldBeEmpty)
 	test.That(t, free.Constraints.CollisionSpecification, test.ShouldBeEmpty)
@@ -151,12 +151,14 @@ func TestBuildRequest(t *testing.T) {
 	test.That(t, pif.Parent(), test.ShouldEqual, referenceframe.World)
 	test.That(t, spatialmath.PoseAlmostEqual(pif.Pose(), goal), test.ShouldBeTrue)
 
-	contact, err := buildRequest(fs, inputs, obstacles, testRemoverGeoms, cfg, goal, goal, true)
+	contact, err := buildRequest(fs, inputs, obstacles, testRemoverGeoms, cfg, goal, true)
 	test.That(t, err, test.ShouldBeNil)
 	test.That(t, contact.Constraints.LinearConstraint, test.ShouldResemble, []motionplan.LinearConstraint{
-		{LineToleranceMm: lineToleranceMM, OrientationToleranceDegs: orientationToleranceDeg},
+		{LineToleranceMm: lineToleranceMM},
 	})
-	test.That(t, contact.Constraints.PseudolinearConstraint, test.ShouldBeEmpty)
+	test.That(t, contact.Constraints.OrientationConstraint, test.ShouldResemble, []motionplan.OrientationConstraint{
+		{OrientationToleranceDegs: orientationToleranceDeg},
+	})
 	test.That(t, len(contact.Constraints.CollisionSpecification), test.ShouldEqual, 1)
 	var got []string
 	for _, a := range contact.Constraints.CollisionSpecification[0].Allows {
@@ -167,7 +169,7 @@ func TestBuildRequest(t *testing.T) {
 	test.That(t, got, test.ShouldResemble, testRemoverGeoms)
 
 	cfg.ContactFrames = []string{"sander"}
-	contact, err = buildRequest(fs, inputs, obstacles, testRemoverGeoms, cfg, goal, goal, true)
+	contact, err = buildRequest(fs, inputs, obstacles, testRemoverGeoms, cfg, goal, true)
 	test.That(t, err, test.ShouldBeNil)
 	pairs := map[string][]string{}
 	for _, a := range contact.Constraints.CollisionSpecification[0].Allows {
@@ -176,25 +178,9 @@ func TestBuildRequest(t *testing.T) {
 	test.That(t, pairs, test.ShouldResemble, map[string][]string{
 		"compliance": testRemoverGeoms, "sander": testRemoverGeoms,
 	})
-	free, err = buildRequest(fs, inputs, obstacles, testRemoverGeoms, cfg, goal, goal, false)
+	free, err = buildRequest(fs, inputs, obstacles, testRemoverGeoms, cfg, goal, false)
 	test.That(t, err, test.ShouldBeNil)
 	test.That(t, free.Constraints.CollisionSpecification, test.ShouldBeEmpty)
-}
-
-// wp4's tilt needs the rotation-scaled tolerance.
-func TestBuildRequestRotatingStep(t *testing.T) {
-	fs := testFrameSystem(t)
-	features, err := readFeatures(0.7)
-	test.That(t, err, test.ShouldBeNil)
-	wps := waypoints(features, testPadRadiusMM)
-	req, err := buildRequest(fs, referenceframe.NewZeroInputs(fs), referenceframe.NewGeometriesInFrame(referenceframe.World, nil),
-		testRemoverGeoms, validConfig(), wps[2], wps[3], true)
-	test.That(t, err, test.ShouldBeNil)
-	test.That(t, req.Constraints.LinearConstraint, test.ShouldResemble, []motionplan.LinearConstraint{{LineToleranceMm: lineToleranceMM}})
-	test.That(t, req.Constraints.PseudolinearConstraint, test.ShouldResemble, []motionplan.PseudolinearConstraint{
-		{OrientationToleranceFactor: rotatingOrientationFactor},
-	})
-	test.That(t, rotatingOrientationFactor, test.ShouldBeGreaterThanOrEqualTo, 0.5)
 }
 
 // A remover away from world still lands the goal on the waypoint.
@@ -202,7 +188,7 @@ func TestBuildRequestGoalInWorld(t *testing.T) {
 	fs, inputs := reachableCell(t)
 	goal := spatialmath.NewPoseFromPoint(r3.Vector{X: 5, Z: -300})
 	req, err := buildRequest(fs, inputs, referenceframe.NewGeometriesInFrame(referenceframe.World, nil),
-		testRemoverGeoms, validConfig(), goal, goal, true)
+		testRemoverGeoms, validConfig(), goal, true)
 	test.That(t, err, test.ShouldBeNil)
 	pif := req.Goals[0].Poses()["compliance"]
 	test.That(t, pif.Parent(), test.ShouldEqual, referenceframe.World)
