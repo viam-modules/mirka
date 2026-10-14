@@ -26,9 +26,9 @@ pedestal, closer than the pad's radius. +Y is right, facing the plate.
 |---|---|---|---|
 | centre-clear | Pad facing the plate, face 8 mm off it, below the bumper | flush | step 1 |
 | centre-r-start | 50 mm back from the seat along the right slope's normal | flush | step 1 |
-| centre-r | Push into the right slope until the pad seats against both slopes, then 1 mm further right and 3 mm up | flush | step 1, right-hand side |
+| centre-r | Push into the right slope until the pad seats against both slopes, then 1 mm further right and 2.5 mm up | flush | step 1, right-hand side |
 | centre-l-start | 50 mm back from the seat along the left slope's normal | flush | step 1 |
-| centre-l | Push into the left slope the same way, 1 mm further left and 3 mm up | flush | step 1, left-hand side |
+| centre-l | Push into the left slope the same way, 1 mm further left and 2.5 mm up | flush | step 1, left-hand side |
 | centre-drop | Straight down to below the bumper | flush | |
 | fold-l-below | Below the left corner | flush | step 2 |
 | fold-l-press | Up until the pad edge rides 1 mm past the groove faces | flush | step 2 |
@@ -90,7 +90,7 @@ reaching `y = ±20`, and orbit radius `e` = 2.5:
 |---|---|
 | below the bumper (`centre-clear`, `centre-drop`, `fold-l-below`) | `plateFaceX + 8`, `0` or `−82`, `headBottomZ − 5 − r − e` |
 | seat | `plateFaceX + 8`, `0`, `(20 sin θ + zf cos θ − r) / cos θ + e` |
-| push ends (`centre-r`, `centre-l`) | the seat plus `(±1, +3)` in (y, z), pressing about 3 mm into the pushed slope |
+| push ends (`centre-r`, `centre-l`) | the seat plus `(±1, +2.5)` in (y, z), pressing about 2.6 mm into the pushed slope |
 | push starts | each push end minus 50 mm along its slope's normal, `(±sin θ, cos θ)` in (y, z) |
 | fold press | below-pose `x` and `y`, `headTopZ − 111 + 1 − r + e` |
 | fold stroke | the press with `x = headFrontX + 10` |
@@ -140,7 +140,7 @@ The distances are constants in `steps.go`, from the manual:
 | `foldPressMM` | 1 mm | integrator's choice: pad edge past the groove faces |
 | `foldPastMM` | 10 mm | integrator's choice: fold stroke past the bumper's front |
 | `bumperClearMM` | 5 mm | integrator's choice: pad below the bumper between its moves |
-| `centrePushOutMM`, `centrePushUpMM` | 1 mm, 3 mm | tuned on lab-sander-1: each push's press past the seat |
+| `centrePushOutMM`, `centrePushUpMM` | 1 mm, 2.5 mm | tuned on lab-sander-1: each push's press past the seat; 3 mm up loaded the F/T sensor to 4.75 N·m with a badly seated disc, and 2 mm left the left push barely above its free-space load |
 | `approachStandoffMM` | 5 mm | integrator's choice: pad face off the plate at wp1 |
 | `belowTipMM` | 25 mm | tuned: pad top edge below the knife tip at wp1 |
 | `pressDepthMM` | 10 mm | manual: the front plate gives about 10 mm |

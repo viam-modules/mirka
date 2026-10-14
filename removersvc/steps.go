@@ -132,7 +132,7 @@ const (
 	// Each push ends this far past the seat, out toward its own slope and up,
 	// pressing into the pad's foam; tuned on lab-sander-1.
 	centrePushOutMM = 1.0
-	centrePushUpMM  = 3.0
+	centrePushUpMM  = 2.5
 )
 
 // removerFeatures are the faces the waypoints are measured from.
