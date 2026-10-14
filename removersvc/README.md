@@ -90,9 +90,9 @@ checked against every geometry in the frame system and the pass mesh from
 `obstacle_visions`. wp2 to wp5 are contact steps:
 
 - **Straight line**: the tool frame stays within 1 mm of the straight line
-  between consecutive waypoints, with orientation held within 2°. wp4 rotates,
-  so its orientation tolerance is 0.6 of the step's own rotation instead; a
-  fixed 2° would refuse the midpoint of a 20° turn.
+  between consecutive waypoints, with orientation held within 2° of the
+  direct turn between them. wp4's 20° tilt is held to that same 2° band
+  around its rotation.
 - **Contact allowed**: the planner models the 10 mm press as the pad sinking
   into a solid body, where the real plate springs back. So in contact steps the
   tool frame, and each frame in `contact_frames`, may touch the remover's

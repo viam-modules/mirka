@@ -20,13 +20,11 @@ var removerLinks = []string{"body", "blade", "head"}
 // Contact-step tolerances. wp4's tilt is a chord of an arc of radius r, off by
 // r(1 - cos 10 deg): within 1 mm up to a 120 mm pad, not for 150 mm.
 //
-// A rotating step scales its orientation tolerance with its own rotation: the
-// planner checks a slerped midpoint against the segment's ends, and a fixed 2
-// degrees would refuse it.
+// The orientation tolerance is measured from the slerp between a step's ends,
+// so it holds a rotating step like wp4 to its turn as tightly as a straight one.
 const (
-	lineToleranceMM           = 1.0
-	orientationToleranceDeg   = 2.0
-	rotatingOrientationFactor = 0.6
+	lineToleranceMM         = 1.0
+	orientationToleranceDeg = 2.0
 )
 
 // Mirka pads are 77 to 150 mm across; anything else is a placeholder geometry.
@@ -154,7 +152,7 @@ func removerGeometryNames(
 }
 
 // buildRequest builds the plan request to one waypoint. Contact steps add the
-// line constraint and the remover allow list. The goal goes in world, since
+// line and orientation constraints and the remover allow list. The goal goes in world, since
 // armplanning refuses a linear-constrained goal in any other frame.
 func buildRequest(
 	fs *referenceframe.FrameSystem,
@@ -162,7 +160,7 @@ func buildRequest(
 	obstacles *referenceframe.GeometriesInFrame,
 	removerGeoms []string,
 	cfg *Config,
-	prev, goal spatialmath.Pose,
+	goal spatialmath.Pose,
 	contact bool,
 ) (*armplanning.PlanRequest, error) {
 	tf, err := fs.Transform(inputs.ToLinearInputs(),
@@ -172,17 +170,8 @@ func buildRequest(
 	}
 	constraints := motionplan.NewEmptyConstraints()
 	if contact {
-		if motionplan.OrientDist(prev.Orientation(), goal.Orientation()) > orientationToleranceDeg {
-			constraints.AddLinearConstraint(motionplan.LinearConstraint{LineToleranceMm: lineToleranceMM})
-			constraints.AddPseudolinearConstraint(motionplan.PseudolinearConstraint{
-				OrientationToleranceFactor: rotatingOrientationFactor,
-			})
-		} else {
-			constraints.AddLinearConstraint(motionplan.LinearConstraint{
-				LineToleranceMm:          lineToleranceMM,
-				OrientationToleranceDegs: orientationToleranceDeg,
-			})
-		}
+		constraints.AddLinearConstraint(motionplan.LinearConstraint{LineToleranceMm: lineToleranceMM})
+		constraints.AddOrientationConstraint(motionplan.OrientationConstraint{OrientationToleranceDegs: orientationToleranceDeg})
 		touching := append([]string{cfg.ToolFrame}, cfg.ContactFrames...)
 		allows := make([]motionplan.CollisionSpecificationAllowedFrameCollisions, 0, len(touching)*len(removerGeoms))
 		for _, frame := range touching {
