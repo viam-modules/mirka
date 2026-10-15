@@ -18,13 +18,13 @@ import (
 //	head-left, head-right (chained after head: the model is one chain)
 //	        20 x  87 x  45   at (   12, ±67.8, -79.1), turned 40° about X
 //
-// The head is the bumper the pad is centred against. Its underside is a V: a
-// flat 40 mm wide at z=-68.4, then slopes falling 40° to grooved corners near
-// z=-119. Width and angle are from a photo on 2026-10-13; the depth is where a
-// pad touched off, 8.4 mm below the bevelled front edge. The bar above the flat and the
-// two turned boxes on the slopes trace it, so the pad can seat in the V without
-// the stack behind it reading as a collision; the boxes overhang the real
-// bumper's outer edge, never the V.
+// The head is the bumper, whose grooved corners fold the disc edge. Its
+// underside is a V: a flat 40 mm wide at z=-68.4, then slopes falling 40° to
+// grooved corners near z=-119. Width and angle are from a photo on 2026-10-13;
+// the depth is where a pad touched off, 8.4 mm below the bevelled front edge.
+// The bar above the flat and the two turned boxes on the slopes trace it, so
+// the model is no larger than the bumper inside the V; the boxes overhang the
+// real bumper's outer edge, never the V.
 //
 // The body is the widest part of the tool, not the blade.
 //

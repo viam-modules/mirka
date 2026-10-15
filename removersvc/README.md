@@ -11,25 +11,20 @@ downloadable from
 [Mirka's technical documents](https://www.mirka.com/en-us/support/downloads/technical-documents/?currentPage=1&searchTerm=autochanger). Arm and
 knife strictly alternate: every knife move happens with the arm parked.
 
-The cycle opens with the manual's bumper steps. The bumper is the black cap on
-the knife head, so the knife sits flush, its zero-point, while the pad works
-against it. With the spindle stopped the pad hangs on a free eccentric, 2.5 mm
-off the spindle for the AIROS 550CV's 5 mm orbit. Pushing it up into the
-bumper's V swings it to hang straight below the spindle, the position the
-magazine picks from; pushing from the right and then the left makes that
-repeatable. Then the left corner's grooves fold a curled disc edge back down,
-which would otherwise catch the knife. Both corners are grooved so either can
-suit the cell; on lab-sander-1 the right corner sits 43 mm from the arm's
-pedestal, closer than the pad's radius. +Y is right, facing the plate.
+The cycle opens with the manual's step 2: the grooves under the bumper's left
+corner fold a curled disc edge back down, which would otherwise catch the
+knife. The bumper is the black cap on the knife head, so the knife sits flush,
+its zero-point, while the pad works against it. Both corners are grooved so
+either can suit the cell; on lab-sander-1 the right corner sits 43 mm from the
+arm's pedestal, closer than the pad's radius. +Y is right, facing the plate.
+
+The manual's step 1, pushing the pad into the bumper's V to centre its orbit,
+is left out. The arm is position controlled and the bumper rigid, so the press
+loaded the arm's force-torque sensor by however the disc happened to sit, up to
+its trip.
 
 | Step | Arm | Knife | Manual |
 |---|---|---|---|
-| centre-clear | Pad facing the plate, face 8 mm off it, below the bumper | flush | step 1 |
-| centre-r-start | 50 mm back from the seat along the right slope's normal | flush | step 1 |
-| centre-r | Push into the right slope until the pad seats against both slopes, then 1 mm further right and 2.5 mm up | flush | step 1, right-hand side |
-| centre-l-start | 50 mm back from the seat along the left slope's normal | flush | step 1 |
-| centre-l | Push into the left slope the same way, 1 mm further left and 2.5 mm up | flush | step 1, left-hand side |
-| centre-drop | Straight down to below the bumper | flush | |
 | fold-l-below | Below the left corner | flush | step 2 |
 | fold-l-press | Up until the pad edge rides 1 mm past the groove faces | flush | step 2 |
 | fold-l-stroke | Out along +X, 10 mm past the bumper's front | flush | step 2, pulling stroke |
@@ -71,38 +66,27 @@ cannot disagree:
   `head-right`: its top `headTopZ` (z = 0), its lowest corner `headBottomZ`
   (z ≈ −124) and its front `headFrontX` (x = 22).
 
-The V's shape (`bumperFlatDropMM`, `bumperFlatHalfMM`, `bumperSlopeDeg`) is in
-constants, measured from `headTopZ`, since the model's turned boxes do not give
-it up as box extents. `TestModelTracesTheBumperV` holds the model and the
-constants to the same V within half a millimetre.
-
-The groove corners (`bumperCornerDropMM`, `bumperCornerYMM`) are constants too:
+The groove corners (`bumperCornerDropMM`, `bumperCornerYMM`) are constants:
 the model's slope boxes overhang the real bumper's bottom edge.
+`TestModelTracesTheBumperV` holds the model's V to the touched-off shape within
+half a millimetre.
 
 ## How each waypoint is computed
 
 ### Bumper steps
 
-With pad radius `r`, slope angle `θ` = 40°, the flat at `zf = headTopZ − 60`
-reaching `y = ±20`, and orbit radius `e` = 2.5:
+With pad radius `r` and orbit radius `e` = 2.5:
 
 | Waypoint | Position (x, y, z) |
 |---|---|
-| below the bumper (`centre-clear`, `centre-drop`, `fold-l-below`) | `plateFaceX + 8`, `0` or `−82`, `headBottomZ − 5 − r − e` |
-| seat | `plateFaceX + 8`, `0`, `(20 sin θ + zf cos θ − r) / cos θ + e` |
-| push ends (`centre-r`, `centre-l`) | the seat plus `(±1, +2.5)` in (y, z), pressing about 2.6 mm into the pushed slope |
-| push starts | each push end minus 50 mm along its slope's normal, `(±sin θ, cos θ)` in (y, z) |
-| fold press | below-pose `x` and `y`, `headTopZ − 111 + 1 − r + e` |
-| fold stroke | the press with `x = headFrontX + 10` |
+| `fold-l-below` | `plateFaceX + 8`, `−82`, `headBottomZ − 5 − r − e` |
+| `fold-l-press` | the same x and y, `headTopZ − 119.4 + 1 − r + e` |
+| `fold-l-stroke` | the press with `x = headFrontX + 10` |
 
-Every bumper pose faces the plate. The seat is where a pad of radius `r`
-touches both slopes. The tool frame is the spindle axis, and seated, the pad
-hangs `e` below it, so the tool frame aims `e` higher. Below the bumper, the
-pad could still sit `e` above the spindle, so the clearance allows for it.
-
-Each push heads straight at its own slope, and moves away from the other slope
-at only cos 80° of its travel. 50 mm leaves 9 mm, over the orbit plus what
-the touch-off left uncertain.
+Every bumper pose faces the plate. The tool frame is the spindle axis. With the
+spindle stopped and its axis horizontal the pad hangs on its eccentric `e`
+below it, so the press aims `e` higher; below the bumper, the pad could still
+sit `e` above the spindle, so the clearance allows for it.
 
 The 8 mm standoff keeps a sander housing that starts 15 mm behind the pad face
 (lab-sander-1's stack) clear of the bumper's 22 mm front. The pad still
@@ -132,15 +116,12 @@ The distances are constants in `steps.go`, from the manual:
 
 | Constant | Value | Source |
 |---|---|---|
-| `bumperFlatDropMM`, `bumperFlatHalfMM`, `bumperSlopeDeg` | 68.4 mm, 20 mm, 40° | width and angle from a photo of lab-sander-1; depth touched off with the pad, 8.4 mm below the photo's bevelled front edge |
 | `bumperCornerDropMM`, `bumperCornerYMM` | 119.4 mm, 82 mm | photo of lab-sander-1, shifted 8.4 mm with the V; not yet touched off |
 | `orbitRadiusMM` | 2.5 mm | Mirka: the AIROS 550CV's 5 mm orbit |
 | `bumperStandoffMM` | 8 mm | integrator's choice: pad face off the plate at the bumper |
-| `centreApproachMM` | 50 mm | integrator's choice: each centring push's travel |
 | `foldPressMM` | 1 mm | integrator's choice: pad edge past the groove faces |
 | `foldPastMM` | 10 mm | integrator's choice: fold stroke past the bumper's front |
-| `bumperClearMM` | 5 mm | integrator's choice: pad below the bumper between its moves |
-| `centrePushOutMM`, `centrePushUpMM` | 1 mm, 2.5 mm | tuned on lab-sander-1: each push's press past the seat; 3 mm up loaded the F/T sensor to 4.75 N·m with a badly seated disc, and 2 mm left the left push barely above its free-space load |
+| `bumperClearMM` | 5 mm | integrator's choice: pad below the bumper before the fold |
 | `approachStandoffMM` | 5 mm | integrator's choice: pad face off the plate at wp1 |
 | `belowTipMM` | 25 mm | tuned: pad top edge below the knife tip at wp1 |
 | `pressDepthMM` | 10 mm | manual: the front plate gives about 10 mm |
@@ -154,14 +135,14 @@ if tuning shows it varies by disc.
 
 The bumper does not give, unlike the sprung plate, and the arm is position
 controlled, so a target past real contact loads the force-torque sensor until it
-trips. The seat was touched off with the pad, eccentric hanging down; the
-corners were not, so pause before `fold-l-press` and check the pad's clearance
-before running whole cycles. The seat also scales with the pad radius read
-from `tool_frame`'s geometry, so that geometry must match the real pad.
+trips. The corners were not touched off, so pause before `fold-l-press` and
+check the pad's clearance before running whole cycles. The press also scales
+with the pad radius read from `tool_frame`'s geometry, so that geometry must
+match the real pad.
 
 ## Planning
 
-`centre-clear`, `fold-l-below` and wp1 are free moves: the arm
+`fold-l-below` and wp1 are free moves: the arm
 plans from wherever it is around the cell, checked against every geometry in
 the frame system and the pass mesh from `obstacle_visions`. Every other arm
 step is a contact step:
@@ -188,7 +169,7 @@ reads the labels from the remover frame's own geometries by link id.
 
 ## Running a cycle
 
-Preflight plans every arm step, `centre-clear` to wp5, before anything moves. Each step
+Preflight plans every arm step, `fold-l-below` to wp5, before anything moves. Each step
 is planned from where the previous one ends, with the knife joint set to where
 the cycle will have driven it, since the knife geometry moves between grip and
 flush. If any step cannot be planned, the cycle is refused as `not_started`

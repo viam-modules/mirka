@@ -85,13 +85,13 @@ func labSanderCell(t *testing.T) (*referenceframe.FrameSystem, referenceframe.Fr
 }
 
 // The sander housing sits under the bumper and inside wp2's press depth, so
-// this cell needs contact_frames from the first push; the sander alone is enough.
+// this cell needs contact_frames from the fold press; the sander alone is enough.
 func TestLabSanderCycleNeedsContactFrames(t *testing.T) {
 	fs, inputs := labSanderCell(t)
 	cfg := validConfig()
 	err := runCycle(t, fs, inputs, cfg)
 	test.That(t, err, test.ShouldNotBeNil)
-	test.That(t, err.Error(), test.ShouldContainSubstring, "planning centre-r-start")
+	test.That(t, err.Error(), test.ShouldContainSubstring, "planning fold-l-press")
 	test.That(t, err.Error(), test.ShouldContainSubstring, "sander_origin")
 
 	fs, inputs = labSanderCell(t)

@@ -50,15 +50,8 @@ func TestRemoveRunsTheManualSequence(t *testing.T) {
 	test.That(t, err, test.ShouldBeNil)
 	test.That(t, out["removed"], test.ShouldEqual, true)
 	test.That(t, r.log(), test.ShouldResemble, []string{
-		"plan", "plan", "plan", "plan", "plan", "plan", "plan", // preflight plans every arm step
-		"plan", "plan", "plan", "plan", "plan", "plan", "plan",
+		"plan", "plan", "plan", "plan", "plan", "plan", "plan", "plan", // preflight plans every arm step
 		"mirka.stop", "knife.0", // preflight
-		"arm.move",  // centre-clear
-		"arm.move",  // centre-r-start
-		"arm.move",  // centre-r
-		"arm.move",  // centre-l-start
-		"arm.move",  // centre-l
-		"arm.move",  // centre-drop
 		"arm.move",  // fold-l-below
 		"arm.move",  // fold-l-press
 		"arm.move",  // fold-l-stroke
@@ -171,7 +164,7 @@ func TestFailureDoesNotLatch(t *testing.T) {
 	st := status(t, r)
 	test.That(t, st["state"], test.ShouldEqual, "failed")
 	test.That(t, st["step"], test.ShouldEqual, "wp2")
-	test.That(t, st["step_index"], test.ShouldEqual, 11)
+	test.That(t, st["step_index"], test.ShouldEqual, 5)
 	test.That(t, st["report"], test.ShouldEqual, "in_contact")
 	test.That(t, st["knife_offset_mm"], test.ShouldEqual, 0.7)
 	test.That(t, st["drive_ready"], test.ShouldEqual, true)
@@ -193,9 +186,6 @@ func TestFailureReportClasses(t *testing.T) {
 		step         string
 		report       string
 	}{
-		{step: "centre-clear", report: "arm_displaced"},
-		{step: "centre-r", report: "in_contact"},
-		{step: "centre-drop", report: "in_contact"},
 		{step: "fold-l-below", report: "arm_displaced"},
 		{step: "fold-l-stroke", report: "in_contact"},
 		{knife: true, failKnifeAt: 0.7, step: "grip", report: "arm_displaced"},
@@ -354,7 +344,7 @@ func TestOneCycleAtATime(t *testing.T) {
 	<-entered
 
 	test.That(t, status(t, r)["state"], test.ShouldEqual, "running")
-	test.That(t, status(t, r)["step"], test.ShouldEqual, "centre-clear")
+	test.That(t, status(t, r)["step"], test.ShouldEqual, "fold-l-below")
 	_, err := doRemove(r)
 	test.That(t, err, test.ShouldNotBeNil)
 	test.That(t, err.Error(), test.ShouldContainSubstring, "already running")
@@ -584,16 +574,16 @@ func TestStepWalksTheSequence(t *testing.T) {
 
 	out, err := doStep(r)
 	test.That(t, err, test.ShouldBeNil)
-	test.That(t, out, test.ShouldResemble, map[string]interface{}{"completed": "preflight", "next": "centre-clear"})
+	test.That(t, out, test.ShouldResemble, map[string]interface{}{"completed": "preflight", "next": "fold-l-below"})
 	test.That(t, r.log(), test.ShouldResemble, preflightSequence)
 	st := status(t, r)
 	test.That(t, st["state"], test.ShouldEqual, "paused")
 	test.That(t, st["completed"], test.ShouldEqual, "preflight")
-	test.That(t, st["next"], test.ShouldEqual, "centre-clear")
+	test.That(t, st["next"], test.ShouldEqual, "fold-l-below")
 
 	out, err = doStep(r)
 	test.That(t, err, test.ShouldBeNil)
-	test.That(t, out, test.ShouldResemble, map[string]interface{}{"completed": "centre-clear", "next": "centre-r-start"})
+	test.That(t, out, test.ShouldResemble, map[string]interface{}{"completed": "fold-l-below", "next": "fold-l-press"})
 	test.That(t, r.log(), test.ShouldResemble, append(append([]string(nil), preflightSequence...), "arm.move"))
 
 	for i := 1; i < len(removalSteps)-1; i++ {
@@ -620,7 +610,7 @@ func TestRemoveRefusesAPausedCycle(t *testing.T) {
 
 	_, err = doRemove(r)
 	test.That(t, err, test.ShouldNotBeNil)
-	test.That(t, err.Error(), test.ShouldContainSubstring, "paused before centre-r-start")
+	test.That(t, err.Error(), test.ShouldContainSubstring, "paused before fold-l-press")
 	test.That(t, len(r.log()), test.ShouldEqual, before)
 	test.That(t, status(t, r)["state"], test.ShouldEqual, "paused")
 }
@@ -661,16 +651,16 @@ func TestResumeRefusedWhenArmHasMoved(t *testing.T) {
 	r.moveArm([]referenceframe.Input{0.5}) // jogged while paused
 	_, err = doStep(r)
 	test.That(t, err, test.ShouldNotBeNil)
-	test.That(t, err.Error(), test.ShouldContainSubstring, "not at centre-clear")
+	test.That(t, err.Error(), test.ShouldContainSubstring, "not at fold-l-below")
 	test.That(t, len(r.log()), test.ShouldEqual, before)
 	st := status(t, r)
 	test.That(t, st["state"], test.ShouldEqual, "paused")
-	test.That(t, st["next"], test.ShouldEqual, "centre-r-start")
+	test.That(t, st["next"], test.ShouldEqual, "fold-l-press")
 
-	r.moveArm([]referenceframe.Input{0}) // returned to centre-clear
+	r.moveArm([]referenceframe.Input{0}) // returned to fold-l-below
 	out, err := doStep(r)
 	test.That(t, err, test.ShouldBeNil)
-	test.That(t, out["completed"], test.ShouldEqual, "centre-r-start")
+	test.That(t, out["completed"], test.ShouldEqual, "fold-l-press")
 }
 
 func TestResumeChecksTheLastWaypointBeforeAKnifeStep(t *testing.T) {
@@ -705,7 +695,7 @@ func TestStepFailureEndsTheCycle(t *testing.T) {
 	test.That(t, err, test.ShouldNotBeNil)
 	st := status(t, r)
 	test.That(t, st["state"], test.ShouldEqual, "failed")
-	test.That(t, st["step"], test.ShouldEqual, "centre-r-start")
+	test.That(t, st["step"], test.ShouldEqual, "fold-l-press")
 	test.That(t, st["report"], test.ShouldEqual, "in_contact")
 
 	r.arm.MoveThroughJointPositionsFunc = func(_ context.Context, p [][]referenceframe.Input, _ *arm.MoveOptions, _ map[string]interface{}) error {
