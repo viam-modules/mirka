@@ -361,7 +361,15 @@ func (s *service) runStep(ctx context.Context, p *prepared, st step) error {
 		if st.contact {
 			opts = s.cfg.contactMoveOptions()
 		}
-		return s.arm.MoveThroughJointPositions(ctx, path, opts, nil)
+		if err := s.arm.MoveThroughJointPositions(ctx, path, opts, nil); err != nil {
+			return err
+		}
+		// The xArm driver returns once the arm stops moving, so a blocked arm or a
+		// controller fault reads as success; catch it here, not one step later.
+		if err := s.armAtJoints(ctx, path[len(path)-1]); err != nil {
+			return fmt.Errorf("arm did not reach the end of its planned path (blocked, or a controller fault): %w", err)
+		}
+		return nil
 	default:
 		return fmt.Errorf("unknown step kind %d", st.kind)
 	}

@@ -417,7 +417,9 @@ func TestPreflightPlansTheWholeCycleChained(t *testing.T) {
 }
 
 // An arm off the next path's start is not driven along it.
-func TestArmOffThePlannedStartFailsBeforeMoving(t *testing.T) {
+// A move the driver reports done without arriving fails at that step: the
+// xArm driver returns once the arm stops, so a blocked arm reads as success.
+func TestMoveThatDoesNotArriveFails(t *testing.T) {
 	r := newRig(t)
 	r.svc.planArm = func(_ context.Context, req *armplanning.PlanRequest) ([][]referenceframe.Input, error) {
 		start := req.StartState.Configuration()["arm"][0]
@@ -430,10 +432,35 @@ func TestArmOffThePlannedStartFailsBeforeMoving(t *testing.T) {
 	}
 	_, err := doRemove(r)
 	test.That(t, err, test.ShouldNotBeNil)
-	test.That(t, err.Error(), test.ShouldContainSubstring, "not where the planned path starts")
+	test.That(t, err.Error(), test.ShouldContainSubstring, "did not reach the end of its planned path")
 	test.That(t, moves, test.ShouldEqual, 1)
-	st := status(t, r)
-	test.That(t, st["step"], test.ShouldEqual, "wp2")
+	test.That(t, status(t, r)["step"], test.ShouldEqual, "wp1")
+}
+
+// An arm moved between steps is not driven along the next path.
+func TestArmOffThePlannedStartFailsBeforeMoving(t *testing.T) {
+	r := newRig(t)
+	r.svc.planArm = func(_ context.Context, req *armplanning.PlanRequest) ([][]referenceframe.Input, error) {
+		start := req.StartState.Configuration()["arm"][0]
+		return [][]referenceframe.Input{{start}, {start + 0.1}}, nil
+	}
+	moves := 0
+	r.arm.MoveThroughJointPositionsFunc = func(_ context.Context, p [][]referenceframe.Input, _ *arm.MoveOptions, _ map[string]interface{}) error {
+		moves++
+		r.moveArm(p[len(p)-1])
+		return nil
+	}
+	r.remover.MoveToPositionFunc = func(_ context.Context, pos, _ []float64, _ map[string]interface{}) error {
+		if pos[0] == 0 { // the clamp; the arm is knocked while the knife moves
+			r.moveArm([]referenceframe.Input{-1})
+		}
+		return nil
+	}
+	_, err := doRemove(r)
+	test.That(t, err, test.ShouldNotBeNil)
+	test.That(t, err.Error(), test.ShouldContainSubstring, "not where the planned path starts")
+	test.That(t, moves, test.ShouldEqual, 3)
+	test.That(t, status(t, r)["step"], test.ShouldEqual, "wp4")
 }
 
 // Contact steps use the service's limits; wp1 keeps the arm's own.
