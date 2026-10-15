@@ -181,9 +181,9 @@ type prepared struct {
 	obstacles *referenceframe.GeometriesInFrame
 	// Remover geometries contact steps may touch.
 	removerGeoms []string
-	waypoints    [5]spatialmath.Pose
+	waypoints    []spatialmath.Pose
 	// Joint path to each waypoint, planned at preflight.
-	paths [5][][]referenceframe.Input
+	paths [][][]referenceframe.Input
 }
 
 // pausedCycle is the prepared cycle and the index of its next step.
@@ -310,7 +310,7 @@ func (s *service) pause(p *prepared, next int, completed string) map[string]inte
 }
 
 // preflight plans the whole cycle before anything moves, so an unplannable one
-// fails here rather than in contact. The knife move to grip doubles as the
+// fails here rather than in contact. The knife move to flush doubles as the
 // drive readiness check.
 func (s *service) preflight(ctx context.Context) (*prepared, error) {
 	// A moving arm would make the plan's start stale.
@@ -327,8 +327,8 @@ func (s *service) preflight(ctx context.Context) (*prepared, error) {
 	if _, err := s.mirka.DoCommand(ctx, map[string]interface{}{"command": "stop"}); err != nil {
 		return p, fmt.Errorf("stopping the spindle: %w", err)
 	}
-	if err := s.remover.MoveToPosition(ctx, []float64{s.cfg.GripOffsetMM}, nil, nil); err != nil {
-		return p, fmt.Errorf("moving the knife to grip: %w", err)
+	if err := s.remover.MoveToPosition(ctx, []float64{s.cfg.knifeOffset(knifeFlush)}, nil, nil); err != nil {
+		return p, fmt.Errorf("moving the knife to flush: %w", err)
 	}
 	return p, nil
 }
@@ -364,11 +364,12 @@ func (s *service) prepare(ctx context.Context) (*prepared, referenceframe.FrameS
 	if err := clearOfRemover(fs, inputs, s.cfg); err != nil {
 		return p, nil, err
 	}
-	features, err := readFeatures(s.cfg.GripOffsetMM)
+	features, err := readFeatures()
 	if err != nil {
 		return p, nil, err
 	}
 	p.waypoints = waypoints(features, radius)
+	p.paths = make([][][]referenceframe.Input, len(p.waypoints))
 	return p, inputs, nil
 }
 
@@ -378,7 +379,7 @@ func (s *service) planCycle(
 	ctx context.Context, p *prepared, current referenceframe.FrameSystemInputs,
 ) error {
 	inputs := maps.Clone(current)
-	inputs[s.cfg.Remover] = []referenceframe.Input{s.cfg.knifeOffset(knifeGrip)}
+	inputs[s.cfg.Remover] = []referenceframe.Input{s.cfg.knifeOffset(knifeFlush)}
 	for _, st := range removalSteps {
 		if st.kind == knifeStep {
 			inputs[s.cfg.Remover] = []referenceframe.Input{s.cfg.knifeOffset(st.knife)}
@@ -501,9 +502,9 @@ func (s *service) fail(ctx context.Context, index int, name string, rep report, 
 			st.driveReady = &ready
 		}
 	}
-	// wp5 is meaningless before the arm has moved.
+	// wp5, the last waypoint, is meaningless before the arm has moved.
 	if rep != reportNotStarted && p != nil && p.fs != nil {
-		if at, err := s.atWaypoint(readCtx, p, 4); err == nil {
+		if at, err := s.atWaypoint(readCtx, p, len(p.waypoints)-1); err == nil {
 			st.armAtWp5 = &at
 		}
 	}

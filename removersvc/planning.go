@@ -15,7 +15,7 @@ import (
 
 // removerLinks are the links the pad may touch in contact steps. Allowing the
 // whole component would let the pad drive through the body.
-var removerLinks = []string{"body", "blade", "head"}
+var removerLinks = []string{"body", "blade", "head", "head-left", "head-right"}
 
 // Contact-step tolerances. wp4's tilt is a chord of an arc of radius r, off by
 // r(1 - cos 10 deg): within 1 mm up to a 120 mm pad, not for 150 mm.
