@@ -120,7 +120,10 @@ with nothing moved, rather than failing later with the pad pressed into the
 plate. Only then does preflight stop the spindle and move the knife to grip.
 
 Each arm step then runs its stored path, and refuses unless every arm joint is
-within 0.01 rad (about 2 mm at the pad) of where that path starts. The free move
+within 0.01 rad (about 2 mm at the pad) of where that path starts, and fails
+unless the arm ends within 0.01 rad of where the path ends: the xArm driver
+returns once the arm stops moving, so a blocked arm or a controller fault would
+otherwise read as success. The free move
 to wp1 runs at the arm's configured speed; the contact steps run at
 `contact_speed_degs_per_sec` and `contact_acceleration_degs_per_sec_per_sec`
 (10 °/s and 20 °/s² by default), whatever the arm is set to.
