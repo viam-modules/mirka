@@ -515,7 +515,9 @@ Every field is something the service cannot derive on its own:
 
 | Call | Behaviour |
 |---|---|
-| `{"command": "remove"}` | Preflight, which plans every arm step before anything moves and refuses (`not_started`) if any cannot be planned, then run the stored paths. Blocks. One at a time — a second call while running is refused. A failure is reported, not latched: the next call starts afresh with preflight. Context cancel aborts the cycle and stops both actuators; no recovery is attempted. |
+| `{"command": "remove"}` | Preflight, which plans every arm step before anything moves and refuses (`not_started`) if any cannot be planned, then run the stored paths. Blocks. One at a time — a second call while running is refused. A failure is reported, not latched: the next call starts afresh with preflight. Refused while a step cycle is paused; continue it with `step` or abandon it with `reset`. Context cancel aborts the cycle and stops both actuators; no recovery is attempted. |
+| `{"command": "step"}` | Runs one step, then pauses: the first `step` is preflight, the next is wp1 (the pad in front of the blade), then wp2 onward in the manual's order. Resuming is refused unless every arm joint is still within 0.01 rad of where the last arm step left it; the refusal moves nothing and the cycle stays paused. A failure ends the cycle as in `remove`; the next `step` starts afresh with preflight. |
+| `{"command": "reset"}` | Abandons a paused step cycle. Moves nothing and reads nothing. Refused while a cycle is running, and an error when nothing is paused. |
 
 ```json
 { "command": "remove" }
@@ -525,6 +527,33 @@ Response:
 
 ```json
 { "removed": true }
+```
+
+```json
+{ "command": "step" }
+```
+
+Response, while steps remain, then after the last one:
+
+```json
+{ "completed": "wp1", "next": "wp2" }
+```
+
+```json
+{ "completed": "regrip", "removed": true }
+```
+
+A paused cycle lives in memory: a module restart or a reconfigure drops it, so
+check the cell by eye before the next call.
+
+```json
+{ "command": "reset" }
+```
+
+Response:
+
+```json
+{ "state": "idle" }
 ```
 
 ### Preconditions
@@ -539,9 +568,10 @@ Owned by the caller, not checked beyond what preflight can see:
 
 ### Status
 
-`Status` reports `state` (`idle`, `running`, `failed`), and while running or
-failed, `step` and `step_index`. A `failed` status adds `error` and `report`,
-plus `knife_offset_mm`, `drive_ready`, and `arm_at_wp5` where the
+`Status` reports `state` (`idle`, `running`, `paused`, `failed`), and while
+running or failed, `step` and `step_index`. A `paused` status reports
+`completed` and `next`. A `failed` status adds `error` and `report`, plus
+`knife_offset_mm`, `drive_ready`, and `arm_at_wp5` where the
 hardware could be read — each is omitted rather than guessed if its read fails.
 `arm_at_wp5` is never reported for a `not_started` failure, since the arm never
 left free space.
