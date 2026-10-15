@@ -22,12 +22,6 @@ func TestRemovalStepOrder(t *testing.T) {
 		report  report
 	}
 	want := []row{
-		{"centre-clear", armStep, false, 0, reportArmDisplaced},
-		{"centre-r-start", armStep, true, 0, reportInContact},
-		{"centre-r", armStep, true, 0, reportInContact},
-		{"centre-l-start", armStep, true, 0, reportInContact},
-		{"centre-l", armStep, true, 0, reportInContact},
-		{"centre-drop", armStep, true, 0, reportInContact},
 		{"fold-l-below", armStep, false, 0, reportArmDisplaced},
 		{"fold-l-press", armStep, true, 0, reportInContact},
 		{"fold-l-stroke", armStep, true, 0, reportInContact},
@@ -122,9 +116,16 @@ func TestWaypointsFollowTheSteps(t *testing.T) {
 	test.That(t, wps[len(wps)-5:], test.ShouldResemble, rm[:])
 }
 
-// The model's bumper and the constants the waypoints use describe one V: a
-// point half a millimetre inside the V is free, half a millimetre past its face
-// is in the head.
+// The bumper's V as touched off on lab-sander-1: the flat top below the head's
+// top, half its width, and each slope from horizontal.
+const (
+	bumperFlatDropMM = 68.4
+	bumperFlatHalfMM = 20.0
+	bumperSlopeDeg   = 40.0
+)
+
+// The model's bumper traces the measured V: a point half a millimetre inside
+// the V is free, half a millimetre past its face is in the head.
 func TestModelTracesTheBumperV(t *testing.T) {
 	f, err := readFeatures()
 	test.That(t, err, test.ShouldBeNil)
@@ -156,82 +157,36 @@ func TestModelTracesTheBumperV(t *testing.T) {
 	}
 }
 
-// Distance from the pad's centre, at the tool frame shifted by the orbit, to
-// the slope through the flat's end at y = side*bumperFlatHalfMM.
-func slopeGap(f removerFeatures, padCentre r3.Vector, side float64) float64 {
-	th := bumperSlopeDeg * math.Pi / 180
-	end := r3.Vector{Y: side * bumperFlatHalfMM, Z: f.headTopZ - bumperFlatDropMM}
-	into := r3.Vector{Y: side * math.Sin(th), Z: math.Cos(th)}
-	return end.Sub(padCentre).Dot(into)
-}
-
 func TestBumperWaypoints(t *testing.T) {
 	f, err := readFeatures()
 	test.That(t, err, test.ShouldBeNil)
 	wps := bumperWaypoints(f, testPadRadiusMM)
-	test.That(t, wps, test.ShouldHaveLength, 9)
+	test.That(t, wps, test.ShouldHaveLength, 3)
 	flush := removerGeometries(t, 0)
-	yz := func(p spatialmath.Pose) r3.Vector { return r3.Vector{Y: p.Point().Y, Z: p.Point().Z} }
-	// The orbit swings the pad below the spindle once pushed up.
-	hung := func(p spatialmath.Pose) r3.Vector { return yz(p).Sub(r3.Vector{Z: orbitRadiusMM}) }
+	below, press, stroke := wps[0], wps[1], wps[2]
 
-	t.Run("pad faces the plate, clear of the flush knife", func(t *testing.T) {
-		for _, p := range wps[:8] {
-			test.That(t, toolZ(p).X, test.ShouldAlmostEqual, -1, 1e-9)
-			test.That(t, p.Point().X, test.ShouldBeGreaterThan, flush["autochanger-remover:blade"].Pose().Point().X+1)
-		}
-	})
-	t.Run("free moves keep the pad clear of the remover, whatever the orbit", func(t *testing.T) {
-		for _, i := range []int{0, 6} {
-			lifted := spatialmath.Compose(spatialmath.NewPoseFromPoint(r3.Vector{Z: orbitRadiusMM}), wps[i])
-			test.That(t, collidesWith(t, padAt(t, lifted), flush), test.ShouldBeEmpty)
-		}
-	})
-	t.Run("each push ends just past the seat, out toward its own slope and up", func(t *testing.T) {
-		for _, c := range []struct {
-			i    int
-			side float64
-		}{{2, 1}, {4, -1}} {
-			seat := yz(wps[c.i]).Sub(r3.Vector{Y: c.side * centrePushOutMM, Z: centrePushUpMM})
-			test.That(t, seat.Y, test.ShouldAlmostEqual, 0, 1e-9)
-			for _, side := range []float64{1, -1} {
-				test.That(t, slopeGap(f, seat.Sub(r3.Vector{Z: orbitRadiusMM}), side), test.ShouldAlmostEqual, testPadRadiusMM, 1e-9)
-			}
-			// Pressed into its own slope by a couple of millimetres, no more.
-			press := testPadRadiusMM - slopeGap(f, hung(wps[c.i]), c.side)
-			test.That(t, press, test.ShouldBeBetween, 0, 3.5)
-		}
-	})
-	t.Run("each push meets its own slope first, clear of the other by more than the orbit", func(t *testing.T) {
-		for _, c := range []struct {
-			start     int
-			near, far float64
-		}{{1, 1, -1}, {3, -1, 1}} {
-			d := yz(wps[c.start+1]).Sub(yz(wps[c.start]))
-			test.That(t, d.Norm(), test.ShouldAlmostEqual, centreApproachMM, 1e-9)
-			test.That(t, d.Y*c.near, test.ShouldBeGreaterThan, 0)
-			test.That(t, d.Z, test.ShouldBeGreaterThan, 0)
-			far := slopeGap(f, yz(wps[c.start+1]), c.far) - slopeGap(f, yz(wps[c.start]), c.far)
-			test.That(t, -far, test.ShouldBeGreaterThan, orbitRadiusMM+3)
-		}
-	})
-	t.Run("fold presses the pad edge into the left corner's grooves, then drags it out past the head", func(t *testing.T) {
-		for _, c := range []struct {
-			below int
-			y     float64
-		}{{6, -bumperCornerYMM}} {
-			press, stroke := wps[c.below+1], wps[c.below+2]
-			test.That(t, wps[c.below].Point().Y, test.ShouldAlmostEqual, c.y, 1e-9)
-			test.That(t, press.Point().Y, test.ShouldAlmostEqual, c.y, 1e-9)
-			padTop := hung(press).Z + testPadRadiusMM
-			test.That(t, padTop, test.ShouldAlmostEqual, f.headTopZ-bumperCornerDropMM+foldPressMM, 1e-9)
-			d := stroke.Point().Sub(press.Point())
-			test.That(t, d.Y, test.ShouldAlmostEqual, 0, 1e-9)
-			test.That(t, d.Z, test.ShouldAlmostEqual, 0, 1e-9)
-			test.That(t, stroke.Point().X, test.ShouldAlmostEqual, f.headFrontX+foldPastMM, 1e-9)
-			test.That(t, collidesWith(t, padAt(t, stroke), flush), test.ShouldBeEmpty)
-		}
-	})
+	for _, p := range wps {
+		test.That(t, toolZ(p).X, test.ShouldAlmostEqual, -1, 1e-9)
+		test.That(t, p.Point().Y, test.ShouldAlmostEqual, -bumperCornerYMM, 1e-9)
+	}
+	// Clear whichever way the pad sits on its orbit.
+	for _, dz := range []float64{-orbitRadiusMM, orbitRadiusMM} {
+		lifted := spatialmath.Compose(spatialmath.NewPoseFromPoint(r3.Vector{Z: dz}), below)
+		test.That(t, collidesWith(t, padAt(t, lifted), flush), test.ShouldBeEmpty)
+	}
+	// Straight up into the grooves: the hanging pad's top edge rides foldPressMM
+	// past the groove faces.
+	d := press.Point().Sub(below.Point())
+	test.That(t, d.X, test.ShouldAlmostEqual, 0, 1e-9)
+	test.That(t, d.Z, test.ShouldBeGreaterThan, 0)
+	padTop := press.Point().Z - orbitRadiusMM + testPadRadiusMM
+	test.That(t, padTop, test.ShouldAlmostEqual, f.headTopZ-bumperCornerDropMM+foldPressMM, 1e-9)
+	// Then out along +X past the bumper's front.
+	d = stroke.Point().Sub(press.Point())
+	test.That(t, d.Y, test.ShouldAlmostEqual, 0, 1e-9)
+	test.That(t, d.Z, test.ShouldAlmostEqual, 0, 1e-9)
+	test.That(t, stroke.Point().X, test.ShouldAlmostEqual, f.headFrontX+foldPastMM, 1e-9)
+	test.That(t, collidesWith(t, padAt(t, stroke), flush), test.ShouldBeEmpty)
 }
 
 func TestWaypoints(t *testing.T) {

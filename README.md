@@ -173,12 +173,12 @@ head-left     rides the head        geometry  20 x  87 x  45, turned 40° about 
 head-right    rides head-left       geometry  20 x  87 x  45, turned −40° about X
 ```
 
-The head is the bumper the pad is centred against. Its underside is a V: a flat
+The head is the bumper whose corner grooves fold the disc edge. Its underside is a V: a flat
 40 mm wide at `z=−68.4`, then slopes falling 40° to grooved corners near
 `z=−119`: width and angle from a photo of lab-sander-1, depth touched off with
 the pad, since the bevelled underside sits lower than its front edge. `head` is the bar above the
-flat and the two turned boxes lie on the slopes, so a pad seated in the V does
-not read as a collision. The boxes overhang the real bumper's outer edges,
+flat and the two turned boxes lie on the slopes, so the model is no larger than
+the real bumper inside the V. The boxes overhang the real bumper's outer edges,
 never the V. The three head links are chained only because a kinematic model
 is one chain; none moves relative to the others.
 
@@ -528,7 +528,7 @@ Every field is something the service cannot derive on its own:
 | Call | Behaviour |
 |---|---|
 | `{"command": "remove"}` | Preflight, which plans every arm step before anything moves and refuses (`not_started`) if any cannot be planned, then run the stored paths. Blocks. One at a time — a second call while running is refused. A failure is reported, not latched: the next call starts afresh with preflight. Refused while a step cycle is paused; continue it with `step` or abandon it with `reset`. Context cancel aborts the cycle and stops both actuators; no recovery is attempted. |
-| `{"command": "step"}` | Runs one step, then pauses: the first `step` is preflight, the next is `centre-clear` (the pad below the bumper), then the rest in the manual's order: [the removal cycle](removersvc/README.md#the-removal-cycle) lists every step. Resuming is refused unless every arm joint is still within 0.01 rad of where the last arm step left it; the refusal moves nothing and the cycle stays paused. A failure ends the cycle as in `remove`; the next `step` starts afresh with preflight. |
+| `{"command": "step"}` | Runs one step, then pauses: the first `step` is preflight, the next is `fold-l-below` (the pad below the bumper's left corner), then the rest in the manual's order: [the removal cycle](removersvc/README.md#the-removal-cycle) lists every step. Resuming is refused unless every arm joint is still within 0.01 rad of where the last arm step left it; the refusal moves nothing and the cycle stays paused. A failure ends the cycle as in `remove`; the next `step` starts afresh with preflight. |
 | `{"command": "reset"}` | Abandons a paused step cycle. Moves nothing and reads nothing. Refused while a cycle is running, and an error when nothing is paused. |
 
 ```json
@@ -548,7 +548,7 @@ Response:
 Response, while steps remain, then after the last one:
 
 ```json
-{ "completed": "centre-clear", "next": "centre-r-start" }
+{ "completed": "fold-l-below", "next": "fold-l-press" }
 ```
 
 ```json
@@ -599,8 +599,8 @@ What each failure leaves in the cell:
 | Step | Failure leaves | Disc | Reported as |
 |---|---|---|---|
 | preflight, including planning every arm step | nothing moved, except knife possibly moved to flush and spindle stopped | on pad | `not_started` plus reason |
-| moves below the bumper (`centre-clear`, `fold-l-below`) | arm in free space | on pad | `arm_displaced` |
-| centring pushes, fold presses and strokes, `centre-drop` | pad against the bumper | on pad, edge may be bent | `in_contact` |
+| `fold-l-below` | arm in free space | on pad | `arm_displaced` |
+| `fold-l-press`, `fold-l-stroke` | pad against the bumper | on pad, edge may be bent | `in_contact` |
 | knife grip | arm clear of the bumper, knife between flush and grip | on pad | `arm_displaced` |
 | wp1 transit | arm in free space | on pad | `arm_displaced` |
 | wp2 press, wp3 lift | pad against plate or knife partly under disc | on pad, edge may be lifted | `in_contact` |
