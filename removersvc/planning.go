@@ -213,3 +213,38 @@ func newPlanArm(logger logging.Logger, armName string) planArmFunc {
 		return path, nil
 	}
 }
+
+// clearOfRemover refuses a start with the pad, or any contact frame, touching
+// the remover. The planner lets a free move start in collision and drives it out
+// unconstrained, so after a failure in contact a fresh remove would drag the pad
+// out along whatever path it found; the arm has to be retreated by hand first.
+func clearOfRemover(fs *referenceframe.FrameSystem, inputs referenceframe.FrameSystemInputs, cfg *Config) error {
+	all, err := referenceframe.FrameSystemGeometries(fs, inputs)
+	if err != nil {
+		return fmt.Errorf("remover contact check: %w", err)
+	}
+	remover := all[cfg.Remover]
+	if remover == nil {
+		return referenceframe.NewFrameMissingError(cfg.Remover)
+	}
+	for _, f := range append([]string{cfg.ToolFrame}, cfg.ContactFrames...) {
+		for _, name := range []string{f, f + "_origin"} {
+			gif := all[name]
+			if gif == nil {
+				continue
+			}
+			for _, g := range gif.Geometries() {
+				for _, r := range remover.Geometries() {
+					hit, _, err := g.CollidesWith(r, 0)
+					if err != nil {
+						return fmt.Errorf("remover contact check: %w", err)
+					}
+					if hit {
+						return fmt.Errorf("%s is touching the remover's %s; retreat the arm before remove", f, r.Label())
+					}
+				}
+			}
+		}
+	}
+	return nil
+}
