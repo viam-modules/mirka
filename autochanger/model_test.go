@@ -45,14 +45,14 @@ func modelGeoms(t *testing.T, input float64) map[string]spatialmath.Geometry {
 	return out
 }
 
-func TestModelCarriesThreeGeometries(t *testing.T) {
+func TestModelCarriesItsGeometries(t *testing.T) {
 	// The whole reason this component is a gantry: a LinkInFrame holds one
 	// geometry, a kinematic model holds one per link.
 	g := modelGeoms(t, 0)
-	if len(g) != 3 {
-		t.Fatalf("got %d geometries, want 3: %v", len(g), g)
+	if len(g) != 5 {
+		t.Fatalf("got %d geometries, want 5: %v", len(g), g)
 	}
-	for _, want := range []string{"body", "blade", "head"} {
+	for _, want := range []string{"body", "blade", "head", "head-left", "head-right"} {
 		if _, ok := g[want]; !ok {
 			t.Fatalf("missing link %q, got %v", want, g)
 		}
@@ -63,7 +63,7 @@ func TestBladeAndHeadRideTheJoint(t *testing.T) {
 	zero := modelGeoms(t, 0)
 	out := modelGeoms(t, KnifeTravelMM)
 
-	for _, link := range []string{"blade", "head"} {
+	for _, link := range []string{"blade", "head", "head-left", "head-right"} {
 		moved := out[link].Pose().Point().X - zero[link].Pose().Point().X
 		if math.Abs(moved-KnifeTravelMM) > 0.001 {
 			t.Fatalf("%s moved %v mm, want %v", link, moved, KnifeTravelMM)
@@ -113,9 +113,17 @@ func TestGeometriesAreAnchoredToTheTopFace(t *testing.T) {
 	// Every link hangs below z=0, and the body sits behind the plate face. The
 	// origin is anchored to features a probe can touch, so re-measuring a
 	// dimension changes a box's size and never the mounting frame.
-	tops := map[string]float64{"body": 225, "blade": 130, "head": 60}
+	tops := map[string]float64{"body": 225, "blade": 130, "head": 34.2}
 	for name, g := range modelGeoms(t, 0) {
-		if top := g.Pose().Point().Z + tops[name]; math.Abs(top) > 0.001 {
+		half, ok := tops[name]
+		if !ok {
+			// The bumper's slopes sit inside the bar's height.
+			if z := g.Pose().Point().Z; z >= -34.2 {
+				t.Fatalf("%s centre at z=%v, want below the bar", name, z)
+			}
+			continue
+		}
+		if top := g.Pose().Point().Z + half; math.Abs(top) > 0.001 {
 			t.Fatalf("%s top face at z=%v, want 0", name, top)
 		}
 	}

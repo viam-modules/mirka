@@ -84,14 +84,14 @@ func labSanderCell(t *testing.T) (*referenceframe.FrameSystem, referenceframe.Fr
 	return fs, inputs
 }
 
-// The sander housing sits inside wp2's press depth, so this cell needs
-// contact_frames; the sander alone is enough.
+// The sander housing sits under the bumper and inside wp2's press depth, so
+// this cell needs contact_frames from the fold press; the sander alone is enough.
 func TestLabSanderCycleNeedsContactFrames(t *testing.T) {
 	fs, inputs := labSanderCell(t)
 	cfg := validConfig()
 	err := runCycle(t, fs, inputs, cfg)
 	test.That(t, err, test.ShouldNotBeNil)
-	test.That(t, err.Error(), test.ShouldContainSubstring, "planning wp2")
+	test.That(t, err.Error(), test.ShouldContainSubstring, "planning fold-l-press")
 	test.That(t, err.Error(), test.ShouldContainSubstring, "sander_origin")
 
 	fs, inputs = labSanderCell(t)
@@ -107,7 +107,7 @@ func runCycle(t *testing.T, fs *referenceframe.FrameSystem, inputs referencefram
 	logger := logging.NewTestLogger(t)
 	radius, err := padRadius(fs, inputs, cfg.ToolFrame)
 	test.That(t, err, test.ShouldBeNil)
-	features, err := readFeatures(cfg.GripOffsetMM)
+	features, err := readFeatures()
 	test.That(t, err, test.ShouldBeNil)
 	wps := waypoints(features, radius)
 	obstacles := referenceframe.NewGeometriesInFrame(referenceframe.World, nil)
@@ -117,7 +117,7 @@ func runCycle(t *testing.T, fs *referenceframe.FrameSystem, inputs referencefram
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
-	inputs[cfg.Remover] = []referenceframe.Input{cfg.GripOffsetMM}
+	inputs[cfg.Remover] = []referenceframe.Input{cfg.knifeOffset(knifeFlush)}
 	for _, st := range removalSteps {
 		if st.kind == knifeStep {
 			inputs[cfg.Remover] = []referenceframe.Input{cfg.knifeOffset(st.knife)}
@@ -148,9 +148,9 @@ func TestPreflightRefusesAStartInContact(t *testing.T) {
 	cfg := validConfig()
 	radius, err := padRadius(fs, inputs, cfg.ToolFrame)
 	test.That(t, err, test.ShouldBeNil)
-	features, err := readFeatures(cfg.GripOffsetMM)
+	features, err := readFeatures()
 	test.That(t, err, test.ShouldBeNil)
-	wps := waypoints(features, radius)
+	wps := removalWaypoints(features, radius)
 	obstacles := referenceframe.NewGeometriesInFrame(referenceframe.World, nil)
 	geoms, err := removerGeometryNames(fs, inputs, cfg.Remover)
 	test.That(t, err, test.ShouldBeNil)
