@@ -173,7 +173,7 @@ head-left     rides the head        geometry  20 x  87 x  45, turned 40° about 
 head-right    rides head-left       geometry  20 x  87 x  45, turned −40° about X
 ```
 
-The head is the bumper whose corner grooves fold the disc edge. Its underside is a V: a flat
+The head is the bumper on the knife. Its underside is a V: a flat
 40 mm wide at `z=−68.4`, then slopes falling 40° to grooved corners near
 `z=−119`: width and angle from a photo of lab-sander-1, depth touched off with
 the pad, since the bevelled underside sits lower than its front edge. `head` is the bar above the
@@ -520,7 +520,7 @@ Every field is something the service cannot derive on its own:
 | `input_range_override`  | object          | Optional  | Joint limits that tighten the arm model's, as in the sanding config. |
 | `grip_offset_mm`        | float64         | Required  | The one disc-dependent number the manual leaves to the integrator; a process parameter, not a hardware fact. Must be strictly between `0` and `25`. |
 | `contact_frames`        | list of string  | Optional  | End-of-arm frames besides `tool_frame` that may touch the remover in contact steps. The press into the sprung plate is modelled as the pad sinking into a rigid body, so any geometry less than the 10 mm press depth behind the pad face reads as a collision. Which frames those are depends on how the cell models its end effector. Must not list `tool_frame`. |
-| `contact_speed_degs_per_sec` | float | Optional | Joint speed for the contact steps, every move that touches the bumper and wp2 to wp5, in place of the arm's configured speed, so they stay slow whatever the arm is set to. The free moves keep the arm's own speed. Default 10. |
+| `contact_speed_degs_per_sec` | float | Optional | Joint speed for the contact steps, wp2 to wp5, in place of the arm's configured speed, so they stay slow whatever the arm is set to. The free moves keep the arm's own speed. Default 10. |
 | `contact_acceleration_degs_per_sec_per_sec` | float | Optional | Joint acceleration for the contact steps, as above. Default 20. |
 
 ### DoCommand
@@ -528,7 +528,7 @@ Every field is something the service cannot derive on its own:
 | Call | Behaviour |
 |---|---|
 | `{"command": "remove"}` | Preflight, which plans every arm step before anything moves and refuses (`not_started`) if any cannot be planned, then run the stored paths. Blocks. One at a time — a second call while running is refused. A failure is reported, not latched: the next call starts afresh with preflight. Refused while a step cycle is paused; continue it with `step` or abandon it with `reset`. Context cancel aborts the cycle and stops both actuators; no recovery is attempted. |
-| `{"command": "step"}` | Runs one step, then pauses: the first `step` is preflight, the next is `fold-l-below` (the pad below the bumper's left corner), then the rest in the manual's order: [the removal cycle](removersvc/README.md#the-removal-cycle) lists every step. Resuming is refused unless every arm joint is still within 0.01 rad of where the last arm step left it; the refusal moves nothing and the cycle stays paused. A failure ends the cycle as in `remove`; the next `step` starts afresh with preflight. |
+| `{"command": "step"}` | Runs one step, then pauses: the first `step` is preflight, the next is `grip`, then the rest in the manual's order: [the removal cycle](removersvc/README.md#the-removal-cycle) lists every step. Resuming is refused unless every arm joint is still within 0.01 rad of where the last arm step left it; the refusal moves nothing and the cycle stays paused. A failure ends the cycle as in `remove`; the next `step` starts afresh with preflight. |
 | `{"command": "reset"}` | Abandons a paused step cycle. Moves nothing and reads nothing. Refused while a cycle is running, and an error when nothing is paused. |
 
 ```json
@@ -548,7 +548,7 @@ Response:
 Response, while steps remain, then after the last one:
 
 ```json
-{ "completed": "fold-l-below", "next": "fold-l-press" }
+{ "completed": "grip", "next": "wp1" }
 ```
 
 ```json
@@ -599,9 +599,7 @@ What each failure leaves in the cell:
 | Step | Failure leaves | Disc | Reported as |
 |---|---|---|---|
 | preflight, including planning every arm step | nothing moved, except knife possibly moved to flush and spindle stopped | on pad | `not_started` plus reason |
-| `fold-l-below` | arm in free space | on pad | `arm_displaced` |
-| `fold-l-press`, `fold-l-stroke` | pad against the bumper | on pad, edge may be bent | `in_contact` |
-| knife grip | arm clear of the bumper, knife between flush and grip | on pad | `arm_displaced` |
+| knife grip | arm in free space, knife between flush and grip | on pad | `arm_displaced` |
 | wp1 transit | arm in free space | on pad | `arm_displaced` |
 | wp2 press, wp3 lift | pad against plate or knife partly under disc | on pad, edge may be lifted | `in_contact` |
 | knife clamp | pad at wp3, knife between grip and flush | edge maybe pinched | `in_contact` |
