@@ -61,6 +61,7 @@ func TestRemoveRunsTheManualSequence(t *testing.T) {
 		"arm.move",  // wp5
 		"knife.25",  // release
 		"knife.0.7", // regrip
+		"arm.ft_sensor_enable.true",
 	})
 	test.That(t, status(t, r)["state"], test.ShouldEqual, "idle")
 }
@@ -561,7 +562,7 @@ var fullSequence = func() []string {
 			out = append(out, fmt.Sprintf("knife.%g", validConfig().knifeOffset(s.knife)))
 		}
 	}
-	return out
+	return append(out, "arm.ft_sensor_enable.true")
 }()
 
 func TestStepWalksTheSequence(t *testing.T) {
@@ -569,6 +570,7 @@ func TestStepWalksTheSequence(t *testing.T) {
 
 	out, err := doStep(r)
 	test.That(t, err, test.ShouldBeNil)
+	// A pause leaves F/T off: a later step may be in contact.
 	test.That(t, out, test.ShouldResemble, map[string]interface{}{"completed": "preflight", "next": "grip"})
 	test.That(t, r.log(), test.ShouldResemble, preflightSequence)
 	st := status(t, r)
@@ -631,7 +633,8 @@ func TestResetAbandonsAPausedCycle(t *testing.T) {
 	out, err = doStep(r)
 	test.That(t, err, test.ShouldBeNil)
 	test.That(t, out["completed"], test.ShouldEqual, "preflight")
-	test.That(t, r.log(), test.ShouldResemble, append(append([]string(nil), preflightSequence...), preflightSequence...))
+	want := append(append([]string(nil), preflightSequence...), "arm.ft_sensor_enable.true")
+	test.That(t, r.log(), test.ShouldResemble, append(want, preflightSequence...))
 }
 
 func TestResumeRefusedWhenArmHasMoved(t *testing.T) {
@@ -694,6 +697,7 @@ func TestStepFailureEndsTheCycle(t *testing.T) {
 	test.That(t, st["state"], test.ShouldEqual, "failed")
 	test.That(t, st["step"], test.ShouldEqual, "wp2")
 	test.That(t, st["report"], test.ShouldEqual, "in_contact")
+	test.That(t, r.log()[len(r.log())-1], test.ShouldEqual, "arm.ft_sensor_enable.true")
 
 	r.arm.MoveThroughJointPositionsFunc = func(_ context.Context, p [][]referenceframe.Input, _ *arm.MoveOptions, _ map[string]interface{}) error {
 		r.moveArm(p[len(p)-1])
