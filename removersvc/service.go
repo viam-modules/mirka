@@ -324,6 +324,14 @@ func (s *service) preflight(ctx context.Context) (*prepared, error) {
 	if err := s.planCycle(ctx, p, inputs); err != nil {
 		return p, err
 	}
+	// The bumper and knife contacts can load the tool past the F/T sensor's
+	// overload limit, which faults the arm mid-cycle. Disabling stops the
+	// controller evaluating that limit at all. Needs viam-ufactory-xarm with
+	// PR #137: older versions ignore the value and enable the sensor instead.
+	// ponytail: never re-enabled here; restore it once the contacts fit the sensor's range.
+	if _, err := s.arm.DoCommand(ctx, map[string]interface{}{"ft_sensor_enable": false}); err != nil {
+		return p, fmt.Errorf("disabling the F/T sensor: %w", err)
+	}
 	if _, err := s.mirka.DoCommand(ctx, map[string]interface{}{"command": "stop"}); err != nil {
 		return p, fmt.Errorf("stopping the spindle: %w", err)
 	}

@@ -51,7 +51,7 @@ func TestRemoveRunsTheManualSequence(t *testing.T) {
 	test.That(t, out["removed"], test.ShouldEqual, true)
 	test.That(t, r.log(), test.ShouldResemble, []string{
 		"plan", "plan", "plan", "plan", "plan", // preflight plans every arm step
-		"mirka.stop", "knife.0", // preflight
+		"arm.ft_sensor_enable.false", "mirka.stop", "knife.0", // preflight
 		"knife.0.7", // grip
 		"arm.move",  // wp1
 		"arm.move",  // wp2
@@ -541,7 +541,7 @@ func doStep(r *rig) (map[string]interface{}, error) {
 	return r.svc.DoCommand(context.Background(), map[string]interface{}{"command": "step"})
 }
 
-// preflightSequence plans every arm step, stops the spindle and flushes the knife.
+// preflightSequence plans every arm step, disables F/T, stops the spindle and flushes the knife.
 var preflightSequence = func() []string {
 	var out []string
 	for _, s := range removalSteps {
@@ -549,7 +549,7 @@ var preflightSequence = func() []string {
 			out = append(out, "plan")
 		}
 	}
-	return append(out, "mirka.stop", "knife.0")
+	return append(out, "arm.ft_sensor_enable.false", "mirka.stop", "knife.0")
 }()
 
 var fullSequence = func() []string {

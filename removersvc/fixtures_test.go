@@ -129,6 +129,10 @@ func newRig(t *testing.T) *rig {
 		r.moveArm(p[len(p)-1])
 		return nil
 	}
+	r.arm.DoFunc = func(ctx context.Context, cmd map[string]interface{}) (map[string]interface{}, error) {
+		r.record(fmt.Sprintf("arm.ft_sensor_enable.%v", cmd["ft_sensor_enable"]))
+		return nil, nil
+	}
 	r.remover.IsMovingFunc = func(context.Context) (bool, error) { return false, nil }
 	r.remover.StopFunc = func(context.Context, map[string]interface{}) error { r.record("knife.stop"); return nil }
 	r.remover.MoveToPositionFunc = func(ctx context.Context, pos, _ []float64, _ map[string]interface{}) error {
