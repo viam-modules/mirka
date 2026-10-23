@@ -60,26 +60,19 @@ type step struct {
 	report report
 }
 
-// removalSteps is the manual's removal cycle, steps 2 to 8; the knife only
-// moves with the arm parked. Step 1, centring the orbit against the bumper, is
-// left out: an open-loop press into the rigid bumper loaded the arm's
-// force-torque sensor by however the disc happened to sit. Preflight leaves the
-// knife flush, where the bumper on its head must sit while the pad folds the
-// disc edge down under the left corner's grooves. The manual grooves both
-// corners so either suits the cell; on lab-sander-1 the right corner sits 43 mm
-// from the arm's pedestal, closer than the pad's radius. wp5 is a contact step:
-// it starts with the pad still over the knife.
+// removalSteps is the manual's removal cycle, steps 3 to 8; the knife only
+// moves with the arm parked. The bumper steps are left out: step 1's open-loop
+// press into the rigid bumper loaded the arm's force-torque sensor by however
+// the disc happened to sit, and step 2's edge fold pressed the same bumper.
+// wp5 is a contact step: it starts with the pad still over the knife.
 var removalSteps = []step{
-	{name: "fold-l-below", kind: armStep, waypoint: 0, report: reportArmDisplaced},
-	{name: "fold-l-press", kind: armStep, waypoint: 1, contact: true, report: reportInContact},
-	{name: "fold-l-stroke", kind: armStep, waypoint: 2, contact: true, report: reportInContact},
 	{name: "grip", kind: knifeStep, knife: knifeGrip, report: reportArmDisplaced},
-	{name: "wp1", kind: armStep, waypoint: 3, report: reportArmDisplaced},
-	{name: "wp2", kind: armStep, waypoint: 4, contact: true, report: reportInContact},
-	{name: "wp3", kind: armStep, waypoint: 5, contact: true, report: reportInContact},
+	{name: "wp1", kind: armStep, waypoint: 0, report: reportArmDisplaced},
+	{name: "wp2", kind: armStep, waypoint: 1, contact: true, report: reportInContact},
+	{name: "wp3", kind: armStep, waypoint: 2, contact: true, report: reportInContact},
 	{name: "clamp", kind: knifeStep, knife: knifeFlush, report: reportInContact},
-	{name: "wp4", kind: armStep, waypoint: 6, contact: true, report: reportInContact},
-	{name: "wp5", kind: armStep, waypoint: 7, contact: true, report: reportInContact},
+	{name: "wp4", kind: armStep, waypoint: 3, contact: true, report: reportInContact},
+	{name: "wp5", kind: armStep, waypoint: 4, contact: true, report: reportInContact},
 	{name: "release", kind: knifeStep, knife: knifeRelease, report: reportKnifeHolding},
 	{name: "regrip", kind: knifeStep, knife: knifeGrip, report: reportKnifeHolding},
 }
@@ -99,28 +92,6 @@ const (
 	retreatMM          = 60.0 // wp5, along +X and +Z
 )
 
-// The bumper is the knife head's black cap, with grooved corners on its
-// underside. Measured on lab-sander-1 on 2026-10-13: from a front photo, then
-// shifted 8.4 mm down with the V the pad touched off against, since the
-// underside is bevelled. The corners themselves were not touched off.
-const (
-	bumperCornerDropMM = 119.4 // the groove faces, below the head's top
-	bumperCornerYMM    = 82.0  // the left grooves, at -Y
-)
-
-// The AIROS 550CV's 5 mm orbit. With the spindle stopped and its axis
-// horizontal, the pad hangs this far below the spindle axis, the tool frame;
-// before it settles it may sit as far above.
-const orbitRadiusMM = 2.5
-
-// Left to the integrator.
-const (
-	bumperStandoffMM = 8.0  // pad face off the plate face; keeps a sander housing 15 mm behind the pad off the 22 mm bumper
-	foldPressMM      = 1.0  // how far the pad edge rides up past the groove faces
-	foldPastMM       = 10.0 // the fold stroke ends this far past the head's front
-	bumperClearMM    = 5.0  // pad top below the head's box before the fold
-)
-
 // removerFeatures are the faces the waypoints are measured from.
 type removerFeatures struct {
 	plateFaceX  float64 // the body's +X face: the sliding plate
@@ -135,7 +106,7 @@ var headLinks = []string{"head", "head-left", "head-right"}
 
 // readFeatures reads the features off the planner's own collision model, so
 // waypoints and collisions cannot disagree. The head rides the knife; it is
-// read flush, where the bumper steps run.
+// read flush.
 func readFeatures() (removerFeatures, error) {
 	m, err := autochanger.KinematicModel()
 	if err != nil {
@@ -202,25 +173,7 @@ var facePlate = &spatialmath.OrientationVectorDegrees{OX: -1}
 // each one.
 func waypoints(f removerFeatures, padRadiusMM float64) []spatialmath.Pose {
 	r := removalWaypoints(f, padRadiusMM)
-	return append(bumperWaypoints(f, padRadiusMM), r[:]...)
-}
-
-// bumperWaypoints drags the disc edge out under the left corner's grooves,
-// which folds a curled edge back down before it can catch the knife. +Y is
-// right, facing the plate.
-func bumperWaypoints(f removerFeatures, padRadiusMM float64) []spatialmath.Pose {
-	at := func(p r3.Vector) spatialmath.Pose { return spatialmath.NewPose(p, facePlate) }
-	x := f.plateFaceX + bumperStandoffMM
-	y := -bumperCornerYMM
-	// Below the bumper whichever way the pad sits on its orbit; pressed with the
-	// pad hanging below the spindle.
-	clearZ := f.headBottomZ - bumperClearMM - padRadiusMM - orbitRadiusMM
-	foldZ := f.headTopZ - bumperCornerDropMM + foldPressMM - padRadiusMM + orbitRadiusMM
-	return []spatialmath.Pose{
-		at(r3.Vector{X: x, Y: y, Z: clearZ}),
-		at(r3.Vector{X: x, Y: y, Z: foldZ}),
-		at(r3.Vector{X: f.headFrontX + foldPastMM, Y: y, Z: foldZ}),
-	}
+	return r[:]
 }
 
 // removalWaypoints returns wp1..wp5.
