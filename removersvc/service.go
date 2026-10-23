@@ -79,8 +79,7 @@ type service struct {
 
 	// A cycle paused by the step command. Guarded by cycle.
 	paused *pausedCycle
-	// Preflight turned F/T sampling off and it has not been turned back on.
-	// Guarded by cycle.
+	// F/T is off from preflight. Guarded by cycle.
 	ftOff bool
 
 	// Whether the tool frame is at waypoint i; a field so tests can fake it.
@@ -164,7 +163,7 @@ func (s *service) DoCommand(ctx context.Context, cmd map[string]interface{}) (ma
 	}
 }
 
-// reset abandons a paused cycle. It moves nothing; it re-enables F/T.
+// reset abandons a paused cycle and re-enables F/T. It moves nothing.
 func (s *service) reset() (map[string]interface{}, error) {
 	if !s.cycle.TryLock() {
 		return nil, errors.New("remove is running; reset applies only to a paused cycle")
@@ -211,7 +210,7 @@ func (s *service) run(ctx context.Context, once bool) (map[string]interface{}, e
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	defer context.AfterFunc(s.closeCtx, cancel)()
-	// Deferred so it also runs after failCycle has stopped the actuators.
+	// Runs after failCycle stops the actuators.
 	defer s.restoreFT(ctx)
 
 	var p *prepared
@@ -332,12 +331,8 @@ func (s *service) preflight(ctx context.Context) (*prepared, error) {
 	if err := s.planCycle(ctx, p, inputs); err != nil {
 		return p, err
 	}
-	// The bumper and knife contacts can load the tool past the F/T sensor's
-	// overload limit, which faults the arm mid-cycle. Disabling stops the
-	// controller evaluating that limit at all. Needs viam-ufactory-xarm with
-	// PR #137: older versions ignore the value and enable the sensor instead.
-	// restoreFT turns it back on when the cycle ends.
-	// ponytail: drop the disable once the contacts fit the sensor's range.
+	// Contacts can overload F/T and fault the arm. Older viam-ufactory-xarm
+	// (before #137) enables the sensor instead.
 	if _, err := s.arm.DoCommand(ctx, map[string]interface{}{"ft_sensor_enable": false}); err != nil {
 		return p, fmt.Errorf("disabling the F/T sensor: %w", err)
 	}
@@ -485,11 +480,8 @@ func (s *service) runStep(ctx context.Context, p *prepared, st step) error {
 	}
 }
 
-// restoreFT re-enables the F/T sampling preflight turned off, once the cycle has
-// ended. A paused cycle keeps it off, since its next step may be in contact. An
-// arm left loaded past the limit faults on overload right after the enable; the
-// arm then needs clearing, but it is left in a safe state. A failed enable is
-// retried at the next cycle end. The caller holds cycle.
+// restoreFT re-enables F/T unless a paused cycle may still be in contact. The
+// caller holds cycle.
 func (s *service) restoreFT(ctx context.Context) {
 	if !s.ftOff || s.paused != nil {
 		return
