@@ -331,8 +331,7 @@ func (s *service) preflight(ctx context.Context) (*prepared, error) {
 	if err := s.planCycle(ctx, p, inputs); err != nil {
 		return p, err
 	}
-	// Contacts can overload F/T and fault the arm. Older viam-ufactory-xarm
-	// (before #137) enables the sensor instead.
+	// Contacts can overload F/T and fault the arm.
 	if _, err := s.arm.DoCommand(ctx, map[string]interface{}{"ft_sensor_enable": false}); err != nil {
 		return p, fmt.Errorf("disabling the F/T sensor: %w", err)
 	}
