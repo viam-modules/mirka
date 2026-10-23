@@ -79,6 +79,8 @@ type service struct {
 
 	// A cycle paused by the step command. Guarded by cycle.
 	paused *pausedCycle
+	// F/T is off from preflight. Guarded by cycle.
+	ftOff bool
 
 	// Whether the tool frame is at waypoint i; a field so tests can fake it.
 	atWaypoint func(ctx context.Context, p *prepared, i int) (bool, error)
@@ -139,10 +141,12 @@ func newService(
 }
 
 // Close cancels a running remove and returns once it has stopped.
-func (s *service) Close(context.Context) error {
+func (s *service) Close(ctx context.Context) error {
 	s.cancel()
 	s.cycle.Lock()
 	defer s.cycle.Unlock()
+	s.paused = nil
+	s.restoreFT(ctx)
 	return nil
 }
 
@@ -159,7 +163,7 @@ func (s *service) DoCommand(ctx context.Context, cmd map[string]interface{}) (ma
 	}
 }
 
-// reset abandons a paused cycle. It moves and reads nothing.
+// reset abandons a paused cycle and re-enables F/T. It moves nothing.
 func (s *service) reset() (map[string]interface{}, error) {
 	if !s.cycle.TryLock() {
 		return nil, errors.New("remove is running; reset applies only to a paused cycle")
@@ -169,6 +173,7 @@ func (s *service) reset() (map[string]interface{}, error) {
 		return nil, errors.New("nothing to reset: no step cycle is paused")
 	}
 	s.paused = nil
+	s.restoreFT(context.Background())
 	s.mu.Lock()
 	s.st = cycleState{state: "idle", stepIndex: -1}
 	s.mu.Unlock()
@@ -205,6 +210,8 @@ func (s *service) run(ctx context.Context, once bool) (map[string]interface{}, e
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	defer context.AfterFunc(s.closeCtx, cancel)()
+	// Runs after failCycle stops the actuators.
+	defer s.restoreFT(ctx)
 
 	var p *prepared
 	next := 0
@@ -324,6 +331,11 @@ func (s *service) preflight(ctx context.Context) (*prepared, error) {
 	if err := s.planCycle(ctx, p, inputs); err != nil {
 		return p, err
 	}
+	// Contacts can overload F/T and fault the arm.
+	if _, err := s.arm.DoCommand(ctx, map[string]interface{}{"ft_sensor_enable": false}); err != nil {
+		return p, fmt.Errorf("disabling the F/T sensor: %w", err)
+	}
+	s.ftOff = true
 	if _, err := s.mirka.DoCommand(ctx, map[string]interface{}{"command": "stop"}); err != nil {
 		return p, fmt.Errorf("stopping the spindle: %w", err)
 	}
@@ -465,6 +477,21 @@ func (s *service) runStep(ctx context.Context, p *prepared, st step) error {
 	default:
 		return fmt.Errorf("unknown step kind %d", st.kind)
 	}
+}
+
+// restoreFT re-enables F/T unless a paused cycle may still be in contact. The
+// caller holds cycle.
+func (s *service) restoreFT(ctx context.Context) {
+	if !s.ftOff || s.paused != nil {
+		return
+	}
+	enableCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), stopTimeout)
+	defer cancel()
+	if _, err := s.arm.DoCommand(enableCtx, map[string]interface{}{"ft_sensor_enable": true}); err != nil {
+		s.logger.CErrorw(ctx, "re-enabling the F/T sensor; it is still off", "err", err)
+		return
+	}
+	s.ftOff = false
 }
 
 // stopActuators halts both actuators after a cancel, on a live context.
