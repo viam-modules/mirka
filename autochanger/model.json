@@ -20,7 +20,7 @@
           "y": 0,
           "z": -225.0
         },
-        "label": "remover_body"
+        "label": "body"
       }
     },
     {
@@ -41,7 +41,7 @@
           "y": 0,
           "z": -130.0
         },
-        "label": "knife"
+        "label": "blade"
       }
     },
     {
@@ -62,7 +62,7 @@
           "y": 0,
           "z": -34.2
         },
-        "label": "knife_head"
+        "label": "head"
       }
     },
     {
@@ -92,7 +92,7 @@
             "z": 0
           }
         },
-        "label": "bumper_left"
+        "label": "head-left"
       }
     },
     {
@@ -122,7 +122,7 @@
             "z": 0
           }
         },
-        "label": "bumper_right"
+        "label": "head-right"
       }
     }
   ],
